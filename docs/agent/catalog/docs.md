@@ -4,7 +4,7 @@
 
 | Path | Folder | Type | Purpose | Contents/function | Dependencies | Human-doc impact | Proof |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| docs/BUILDING.md | docs | documentation | Standalone human documentation or public asset | Explains a supported user task or illustrates it | User-guide links and screenshots | This document | `sha256:ae7bec58f822abc568a5ddf73c122bd812237ddf459d8c5546f8606f6a95f9c8`; `f33054c`; 2026-11-19 |
+| docs/BUILDING.md | docs | documentation | Standalone human documentation or public asset | Explains a supported user task or illustrates it | User-guide links and screenshots | This document | `sha256:7aca0380b59bca3a96a63f6dd89a37650d5009699cf63b1f671c25dad91e59c2`; `127d7cd`; 2026-11-19 |
 | docs/INSTALLATION.md | docs | documentation | Standalone human documentation or public asset | Explains a supported user task or illustrates it | User-guide links and screenshots | This document | `sha256:6ef93138ead6531a0ed8f4316d92b93ba654e3106008ccb7e27d1bd96ceda7a2`; `f33054c`; 2026-11-19 |
 | docs/IPHONE.md | docs | documentation | Standalone human documentation or public asset | Explains a supported user task or illustrates it | User-guide links and screenshots | This document | `sha256:42071e924c32e2d6fd21a4c21760404680f2afde70f1268a849ee576a7b1101b`; `f33054c`; 2026-11-19 |
 | docs/README.md | docs | documentation | Standalone human documentation or public asset | Explains a supported user task or illustrates it | User-guide links and screenshots | This document | `sha256:c6521b76ea136b4282dbd13aeacffc71ad87661e8f0d68b452e66237293b47b6`; `f33054c`; 2026-11-19 |

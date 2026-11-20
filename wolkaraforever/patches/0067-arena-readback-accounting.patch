@@ -1,0 +1,149 @@
+# WolkaraForever layer patch 0067 - measure full-arena reply handling
+#
+# Verify the exact zero encoding without allocating a decoded buffer on success.
+# Time whole preflight deliveries separately from the gap between deliveries.
+# Keep the negotiated packet limits, batch depth and detach rules intact.
+--- a/authorization/Debugger/DebugProtocolWire.swift
++++ b/authorization/Debugger/DebugProtocolWire.swift
+@@ -47,6 +47,16 @@
+         }
+         return result
+     }
++    // The complete encoding of zero bytes contains only ASCII '0'. On the
++    // uncommon failure path distinguish malformed hex from valid nonzero data.
++    static func allZeros(_ text: String, count: Int) throws -> Bool {
++        guard count >= 0, count <= capacity / 2, text.utf8.count == count * 2 else {
++            throw PairingError.malformed
++        }
++        if text.utf8.allSatisfy({ $0 == 48 }) { return true }
++        _ = try unhex(text, count: count)
++        return false
++    }
+     static func number(_ text: String?) throws -> UInt64 {
+         guard let text, !text.isEmpty, text.utf8.count <= 16,
+               text.utf8.allSatisfy({ (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0) }),
+--- a/authorization/Debugger/DebugArenaSession.swift
++++ b/authorization/Debugger/DebugArenaSession.swift
+@@ -31,6 +31,15 @@
+     private var outstanding = 0, noAck = false, acknowledged = false, retries = 0, badPackets = 0, consolePackets = 0
+     private var lastPacket = Data(), commandDeadline: TimeInterval = 0, totalDeadline: TimeInterval = 0, lastTime: TimeInterval = 0
+     private var packetSize = 1024, chunk = 480, index = 0
++    private var preflightCallbackEnd: TimeInterval?
++    private var preflightBetweenCallbacks: TimeInterval = 0
++    private var preflightHandling: TimeInterval = 0
++    private(set) var preflightCallbacks = 0
++    var readbackSummary: String {
++        String(format: "readback handling=%.3fs between=%.3fs callbacks=%d",
++               preflightHandling, preflightBetweenCallbacks, preflightCallbacks)
++    }
++
+     private var offset: UInt64 = 0, regionCursor: UInt64 = 0
+     private var replies: [Reply] = [], replied = 0
+     private var attached = false, pendingFailure: Reason?, failedIn: Phase?
+@@ -62,6 +71,21 @@
+     }
+     func receive(_ bytes: Data, now: TimeInterval) -> [Event] {
+         guard !terminal, phase != .idle else { return [] }
++        // Measure complete deliveries that start in the full-region read phase.
++        // The gap includes transport and scheduling on the helper's queue.
++        let measuring = phase == .preflight
++        let start = measuring ? ProcessInfo.processInfo.systemUptime : 0
++        defer {
++            if measuring {
++                let end = ProcessInfo.processInfo.systemUptime
++                if let previous = preflightCallbackEnd { preflightBetweenCallbacks += start - previous }
++                preflightHandling += end - start
++                preflightCallbacks += 1
++                preflightCallbackEnd = phase == .preflight ? end : nil
++            } else if phase == .preflight {
++                preflightCallbackEnd = ProcessInfo.processInfo.systemUptime
++            }
++        }
+         // Replies answer only commands sent before this call returns: what it
+         // emits has not reached the server, so it cannot be answered yet.
+         var events: [Event] = [], answerable = outstanding
+@@ -162,7 +186,7 @@
+             guard replied < replies.count else { throw Reason.protocolFailure }
+             switch replies[replied] {
+             case .ok: guard text == "OK" else { throw Reason.serverFailure }
+-            case .zeros(let count): guard try DebugProtocolWire.unhex(text,count:count).allSatisfy({ $0 == 0 }) else { throw Reason.nonzeroMemory }
++            case .zeros(let count): guard try DebugProtocolWire.allZeros(text, count: count) else { throw Reason.nonzeroMemory }
+             }
+             replied += 1
+             guard outstanding == 0 else { return [] }
+--- a/authorization/Debugger/DebugArenaClient.swift
++++ b/authorization/Debugger/DebugArenaClient.swift
+@@ -6,6 +6,7 @@
+ final class DebugArenaClient {
+     private let manager: TunnelConnectionManager, session: DebugArenaSession
+     private var stream: UUID?, timer: DispatchSourceTimer?
++    var readbackSummary: String { session.readbackSummary }
+     private var started = false, finished = false
+     private var completion: ((Result<DebugArenaSession.Receipt,DebugArenaSession.Failure>) -> Void)?
+     var diagnosticProgress: String { session.diagnosticProgress }
+--- a/authorization/Debugger/ArenaPreparationService.swift
++++ b/authorization/Debugger/ArenaPreparationService.swift
+@@ -17,7 +17,8 @@
+         // Own diagnostic status only; no addresses, memory, challenges or keys.
+         let directory = URL(fileURLWithPath:NSHomeDirectory()).appendingPathComponent("Documents")
+         try? FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+-        try? value.write(to:directory.appendingPathComponent("local-authorization-progress.txt"),atomically:true,encoding:.utf8)
++        let progress = client.map { value + "; " + $0.readbackSummary } ?? value
++        try? progress.write(to:directory.appendingPathComponent("local-authorization-progress.txt"),atomically:true,encoding:.utf8)
+ #endif
+     }
+     override init() { queue = DispatchQueue(label:"local.tolkara.arena-service"); super.init() }
+--- a/tools/probe_debug_arena.swift
++++ b/tools/probe_debug_arena.swift
+@@ -8,7 +8,8 @@
+             let values: [[String:Any]] = events.map { event in
+                 switch event {
+                 case .send(let bytes): return ["send":bytes.base64EncodedString()]
+-                case .finished(.success(let receipt)): return ["success":true,"pid":receipt.pid,"regions":receipt.regions.count]
++                case .finished(.success(let receipt)): return ["success":true,"pid":receipt.pid,"regions":receipt.regions.count,
++                            "readbackCalls":session.preflightCallbacks,"readbackSummary":session.readbackSummary]
+                 case .finished(.failure(let error)): return ["failure":String(describing:error.reason),"detached":error.detachConfirmed]
+                 }
+             }
+--- a/tests/test_debug_arena_peer.py
++++ b/tests/test_debug_arena_peer.py
+@@ -104,6 +104,8 @@
+             read_next[base]+=count
+             response = '00'*count
+             if mode=='nonzero_last' and base==LAST: response='01'+response[2:]
++            if mode=='malformed_zero' and base==LAST: response='01'+response[2:-1]+'z'
++            if mode=='long_read' and base==LAST: response+='00'
+             if mode=='short_read': response=response[:-2]
+             return response
+         if text.startswith('M'):
+@@ -144,6 +146,7 @@
+         result=terminal[0]
+         if mode in ('success','no_ack_checksums'):
+             assert result.get('success') is True and result['pid']==1234 and result['regions']==2
++            assert result['readbackCalls'] > 0 and 'handling=' in result['readbackSummary']
+             pages=[base+n*PAGE for base,size in REGIONS.items() for n in range(size//PAGE)]
+             assert state['detach'] and writes==pages and readback==pages
+             assert batches[-2:]==[256,6],batches
+@@ -155,8 +158,12 @@
+             assert preflight and 8<=max(preflight)<=32,preflight
+         else:
+             assert 'failure' in result and not result.get('success')
+-            if mode in ('wrong_pid','wrong_uid','wrong_arch','duplicate_pid','wrong_challenge','unsafe_last','file_backed','nonzero_last','short_read'):
++            if mode in ('wrong_pid','wrong_uid','wrong_arch','duplicate_pid','wrong_challenge','unsafe_last','file_backed','nonzero_last','short_read','malformed_zero','long_read'):
+                 assert not writes and state['detach'] and result['detached'] is True
++            if mode in ('short_read','malformed_zero','long_read'):
++                assert result['failure']=='protocolFailure'
++            if mode=='nonzero_last':
++                assert result['failure']=='nonzeroMemory'
+             if mode in ('write_error','verify_corrupt','final_pid','final_challenge'):
+                 assert writes and state['detach'] and result['detached'] is True
+             if mode in ('unsupported_no_ack','unsupported_detach_policy','attach_error','ack_without_ack_mode'):
+@@ -169,7 +176,7 @@
+ 
+ def main():
+     for mode in ['success','wrong_pid','wrong_uid','wrong_arch','duplicate_pid','wrong_challenge','unsafe_last','file_backed',
+-                 'nonzero_last','short_read','write_error','verify_corrupt','final_pid','final_challenge','detach_error','detach_trailing',
++                 'nonzero_last','short_read','malformed_zero','long_read','write_error','verify_corrupt','final_pid','final_challenge','detach_error','detach_trailing',
+                  'attach_error','unsupported_no_ack','unsupported_detach_policy','ack_without_ack_mode']:
+         exchange(mode,fragment=mode=='success')
+     exchange(packet_size='8000'); exchange(packet_size='100')

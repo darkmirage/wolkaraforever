@@ -66,6 +66,16 @@ Each mode's own setup, and what to do when it is not ready, is in
 - External JIT needs the enabler at every launch and refuses guest entry while any debugger
   remains attached. It is a diagnostics route, not the supported integrated one.
 
+### Measure Developer service startup
+
+The tunnel extension records the latest preparation in its own
+`Documents/local-authorization-progress.txt`. The `readback` fields split the
+full-region zero check into time inside the reply handler (`handling`) and time
+between deliveries (`between`). The latter includes the service, tunnel, and
+queue scheduling. After a cold launch, run
+`wolkaraforever/tools/device_log.sh --authorization-progress` and read the
+completed “Prepared and detached” line. Compare several launches of the same executable on the same device.
+
 ## Build and install the app
 
 ```sh

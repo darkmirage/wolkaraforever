@@ -1,7 +1,7 @@
 #!/bin/bash
 # Read the app's own log from the iPad, without touching the running app.
 #
-# usage: wolkaraforever/tools/device_log.sh [lines] [pattern]
+# usage: wolkaraforever/tools/device_log.sh [--authorization-progress] [lines] [pattern]
 #
 #   lines    how many of the newest matching lines to print (default 40)
 #   pattern  an egrep pattern to filter on (default: everything)
@@ -19,6 +19,11 @@
 set -eu
 cd "$(dirname "$0")/../.." || exit 2
 
+authorization_progress=0
+if [ "${1:-}" = --authorization-progress ]; then
+    authorization_progress=1
+    shift
+fi
 lines=${1:-40}
 pattern=${2:-.}
 
@@ -58,6 +63,10 @@ device_copy_log() {
 }
 
 logname=${DEVICE_LOG_FILE:-native-guest.log}
+if [ "$authorization_progress" = 1 ]; then
+    bundle="$bundle.authorization"
+    logname=local-authorization-progress.txt
+fi
 case "$logname" in
     ''|/*|*..*) echo "device_log: DEVICE_LOG_FILE must be a path inside Documents/" >&2; exit 2;;
 esac

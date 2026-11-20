@@ -72,7 +72,9 @@ The tunnel extension records the latest preparation in its own
 `Documents/local-authorization-progress.txt`. The `readback` fields split the
 full-region zero check into time inside the reply handler (`handling`) and time
 between deliveries (`between`). The latter includes the service, tunnel, and
-queue scheduling. `tlsWait` counts time from requesting the next tunnel read
+queue scheduling. `encoding=binary` means the service advertised binary
+read-back, while `encoding=hex` means the launcher used the original hex
+encoding. Both check every byte before page preparation. `tlsWait` counts time from requesting the next tunnel read
 until its callback runs, including service and queue delays. `framing` counts
 time assembling and checking IPv6 packets from the delivered bytes.
 `tlsReads` counts those deliveries during read-back. After a cold launch, run

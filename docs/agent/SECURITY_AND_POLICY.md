@@ -8,7 +8,7 @@ Developer service, Local signing, and External JIT have separate executable-memo
 
 ## Experimental browser sign-in
 
-The opt-in Forever browser-login path is off by default. It uses a dedicated nonpersistent WebKit store; never read, log, export, or persist its cookies, credentials, callbacks, or tickets. No script injection, native password bridge, desktop credential access, executable modification, or authentication weakening is permitted.
+The opt-in Forever browser-login path is off by default. It uses a dedicated nonpersistent WebKit store unless the user separately opts into **Stay signed in**, which switches to a dedicated, identifier-scoped persistent WebKit store isolated from add-on browsing; turning that off, disabling login, or clearing sign-in data removes it. Never read, log, or export its cookies, and never read, log, export, or persist credentials, callbacks, or tickets. No script injection, native password bridge, desktop credential access, executable modification, or authentication weakening is permitted.
 
 A valid result stays in process memory until the immediate Forever start, then is handed to the game once through its required launch preferences. Clear those preferences after consumption, game return, timeout, disable, explicit clear, or process start. Tests must use fabricated tickets and isolated preference domains.
 

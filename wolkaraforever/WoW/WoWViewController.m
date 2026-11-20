@@ -1311,6 +1311,17 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     }]];
     [self presentSheet:warning anchor:_browserLoginButton];
 }
+- (void)enableStaySignedIn {
+    UIAlertController *warning=[UIAlertController alertControllerWithTitle:WKLocalized(@"login.stay.title")
+        message:WKLocalized(@"login.stay.message") preferredStyle:UIAlertControllerStyleAlert];
+    [warning addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [warning addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.stay.confirm") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        [NSUserDefaults.standardUserDefaults setBool:YES forKey:TKBattleNetStaySignedInKey];
+        WKLog("battle-login", @"stay signed in enabled");
+        [self render];
+    }]];
+    [self presentSheet:warning anchor:_browserLoginButton];
+}
 - (void)browserLoginSettings {
     if (![self browserLoginAllowed]) return;
     BOOL enabled=[NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"];
@@ -1319,9 +1330,21 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     if (enabled) {
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.disable") style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
             [NSUserDefaults.standardUserDefaults setBool:NO forKey:@"WoWBrowserLogin"];
+            [NSUserDefaults.standardUserDefaults setBool:NO forKey:TKBattleNetStaySignedInKey];
             WKLog("battle-login", @"experimental login disabled");
             [self clearBrowserLoginDataWithMessage:YES];
         }]];
+        if ([TKBattleNetBrowser staySignedIn]) {
+            [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.stay.off") style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+                [NSUserDefaults.standardUserDefaults setBool:NO forKey:TKBattleNetStaySignedInKey];
+                WKLog("battle-login", @"stay signed in disabled");
+                [TKBattleNetBrowser forgetSavedSignInWithCompletion:^{ [self render]; }];
+            }]];
+        } else {
+            [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.stay.on") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+                [self enableStaySignedIn];
+            }]];
+        }
     } else {
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"login.enable") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
             [self enableBrowserLogin];

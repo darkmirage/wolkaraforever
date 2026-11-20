@@ -17,21 +17,48 @@
     NSTimer *_deadline;
 }
 
-+ (WKWebsiteDataStore *)signInDataStore {
-    // Isolated from add-on browsing and kept in memory only (hardened local build):
-    // the Battle.net web session can mint new launch tickets, so it is never written
-    // to disk and ends with this process. WebKit owns the cookies; the launcher never
-    // reads or exports their values. One store per process so a cancelled attempt
-    // can be retried without signing in again.
+NSString *const TKBattleNetStaySignedInKey=@"WoWBrowserLoginStaySignedIn";
+
++ (NSUUID *)persistentStoreIdentifier {
+    // Fixed so the same on-disk store is found on every launch. Dedicated to this
+    // browser: isolated from add-on browsing and the default WebKit store.
+    return [[NSUUID alloc] initWithUUIDString:@"6B1E2C1A-4F0D-4E7B-9C55-2A3D8B9E0F41"];
+}
++ (BOOL)staySignedIn {
+    return [NSUserDefaults.standardUserDefaults boolForKey:TKBattleNetStaySignedInKey];
+}
++ (WKWebsiteDataStore *)memoryDataStore {
+    // One in-memory store per process so a cancelled attempt can be retried without
+    // signing in again. It ends with this process.
     static WKWebsiteDataStore *store;
     static dispatch_once_t once;
     dispatch_once(&once, ^{ store=WKWebsiteDataStore.nonPersistentDataStore; });
     return store;
 }
++ (WKWebsiteDataStore *)persistentDataStore {
+    // Opt-in "Stay signed in": the Battle.net web session survives app restarts in the
+    // app's own container, so later Play presses complete without a password. Launch
+    // tickets are still one-use and never stored; WebKit owns the cookies and the
+    // launcher never reads or exports their values.
+    return [WKWebsiteDataStore dataStoreForIdentifier:[self persistentStoreIdentifier]];
+}
++ (WKWebsiteDataStore *)signInDataStore {
+    return [self staySignedIn] ? [self persistentDataStore] : [self memoryDataStore];
+}
++ (void)clearStore:(WKWebsiteDataStore *)store completion:(void (^)(void))completion {
+    [store removeDataOfTypes:WKWebsiteDataStore.allWebsiteDataTypes
+               modifiedSince:NSDate.distantPast completionHandler:completion];
+}
 + (void)clearSavedSignInWithCompletion:(void (^)(void))completion {
     [TKBattleNetSession clear];
-    [[self signInDataStore] removeDataOfTypes:WKWebsiteDataStore.allWebsiteDataTypes
-                              modifiedSince:NSDate.distantPast completionHandler:completion];
+    WKLog("battle-login", @"clearing in-memory and saved sign-in data");
+    [self clearStore:[self memoryDataStore] completion:^{
+        [self clearStore:[self persistentDataStore] completion:completion];
+    }];
+}
++ (void)forgetSavedSignInWithCompletion:(void (^)(void))completion {
+    WKLog("battle-login", @"clearing saved sign-in data");
+    [self clearStore:[self persistentDataStore] completion:completion];
 }
 
 - (instancetype)initWithRegion:(NSString *)region locale:(NSString *)locale {

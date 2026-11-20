@@ -35,12 +35,13 @@
      if(!destination || (length && !payload) || capacity<4 || length>capacity-4)return 0;
 --- a/authorization/Debugger/DebugProtocolWire.swift
 +++ b/authorization/Debugger/DebugProtocolWire.swift
-@@ -14,8 +14,16 @@
-         set { parser.zero_checksum = newValue }
+@@ -15,7 +15,21 @@
      }
      deinit { storage.deallocate() }
--    func feed(_ byte: UInt8) throws -> Event? {
+     func feed(_ byte: UInt8) throws -> Event? {
 -        switch dw_feed(&parser,byte) {
++        try decode(dw_feed(&parser, byte))
++    }
 +    func feed(_ bytes: Data, offset: inout Int) throws -> Event? {
 +        guard offset >= 0, offset < bytes.count else { throw PairingError.malformed }
 +        let event = bytes.withUnsafeBytes { raw -> DWEvent in
@@ -50,6 +51,9 @@
 +            offset += consumed
 +            return event
 +        }
++        return try decode(event)
++    }
++    private func decode(_ event: DWEvent) throws -> Event? {
 +        switch event {
          case DW_MORE:return nil
          case DW_PACKET:return .packet(Data(bytes:storage,count:parser.length))

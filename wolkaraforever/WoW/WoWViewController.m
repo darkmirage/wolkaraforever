@@ -97,7 +97,7 @@ static NSString *const TKForeverLayoutKey = @"WolkaraForeverTouchLayoutV1";
 static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidChange";
 
 
-@interface TKWoWViewController () <UIDocumentPickerDelegate>
+@interface TKWoWViewController () <UIDocumentPickerDelegate, UINavigationControllerDelegate>
 - (BOOL)inFront;
 @end
 
@@ -216,6 +216,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     NSMutableDictionary<NSString *, TKListSection *> *_sections;
     TKListSwitchRow *_gamepadRow, *_overlayRow, *_soundRow;
     UITabBarController *_tabs;
+    // Set from the moment Play turns a phone's scene sideways until a start fails: the launcher
+    // is upright or sideways on a phone, the game only sideways.
+    BOOL _landscapeForGame;
     TKLauncherPage *_playPage, *_addonsPage, *_controlsPage, *_settingsPage;
     // Set while the layout-import picker is up, so a document chosen there is read as a layout
     // backup and never mistaken for the UI restore's snapshot.
@@ -282,7 +285,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         [view setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisVertical];
         NSLayoutConstraint *aspect=[view.widthAnchor constraintEqualToAnchor:view.heightAnchor
             multiplier:image.size.width/image.size.height];
-        aspect.priority=999;
+        // Below the page column's own width, which is 999: stacked on an upright phone the
+        // picture is capped in height and letterboxes, and must not narrow the whole column.
+        aspect.priority=UILayoutPriorityDefaultHigh;
         aspect.active=YES;
         _markCap=[view.heightAnchor constraintLessThanOrEqualToAnchor:self.view.heightAnchor
             multiplier:0.20];
@@ -519,6 +524,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    // The scene's navigation controller asks its delegate which way the screen may turn, and
+    // nothing else on it has an opinion; the launcher answers.
+    if (!self.navigationController.delegate) self.navigationController.delegate=self;
     // Each tab draws its own bar. The scene's navigation controller still holds this page, so a
     // page the scene pushes over it (diagnostics, the guest) has a bar to come back from.
     [self.navigationController setNavigationBarHidden:YES animated:animated];
@@ -811,7 +819,53 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         [self browserSignIn];
         return;
     }
-    if (self.startApp) self.startApp(app);
+    [self startAppInLandscape:app];
+}
+- (UIInterfaceOrientationMask)navigationControllerSupportedInterfaceOrientations:(UINavigationController *)navigationController {
+    (void)navigationController;
+    if (UIDevice.currentDevice.userInterfaceIdiom!=UIUserInterfaceIdiomPhone) return UIInterfaceOrientationMaskAll;
+    return _landscapeForGame?UIInterfaceOrientationMaskLandscape:UIInterfaceOrientationMaskAllButUpsideDown;
+}
+- (void)holdLandscape:(BOOL)hold {
+    if (_landscapeForGame==hold) return;
+    _landscapeForGame=hold;
+    [self.navigationController setNeedsUpdateOfSupportedInterfaceOrientations];
+}
+// The game sizes its surface from the scene the moment its first window opens (patch 0046), so
+// on an upright phone the scene is turned sideways first and the game is started once it has
+// turned - never while it is turning. Anywhere already sideways, or on a tablet, it starts now.
+- (void)startAppInLandscape:(TKApp *)app {
+    UIWindowScene *scene=self.view.window.windowScene;
+    BOOL phone=UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPhone;
+    if (phone) [self holdLandscape:YES];
+    if (!phone || !scene || UIInterfaceOrientationIsLandscape(scene.effectiveGeometry.interfaceOrientation)) {
+        if (self.startApp) self.startApp(app);
+        return;
+    }
+    WKLog("ui", @"play: turning the scene sideways before the game starts");
+    UIWindowSceneGeometryPreferencesIOS *landscape=[[UIWindowSceneGeometryPreferencesIOS alloc]
+        initWithInterfaceOrientations:UIInterfaceOrientationMaskLandscape];
+    [scene requestGeometryUpdateWithPreferences:landscape errorHandler:^(NSError *error) {
+        WKLog("ui", @"play: the scene would not turn sideways: %@", error.localizedDescription);
+    }];
+    [self startApp:app whenLandscapeIn:scene attempts:40];
+}
+- (void)startApp:(TKApp *)app whenLandscapeIn:(UIWindowScene *)scene attempts:(NSInteger)attempts {
+    BOOL landscape=UIInterfaceOrientationIsLandscape(scene.effectiveGeometry.interfaceOrientation) &&
+        scene.coordinateSpace.bounds.size.width>scene.coordinateSpace.bounds.size.height;
+    if (landscape || attempts<=0) {
+        // A scene that never turned is reported rather than waited on for ever: the game starts
+        // and its own window, which is landscape-only on a phone, asks again.
+        if (!landscape) WKLog("ui", @"play: starting before the scene turned sideways");
+        else WKLog("ui", @"play: the scene is sideways (%.0fx%.0f); starting the game",
+                   scene.coordinateSpace.bounds.size.width, scene.coordinateSpace.bounds.size.height);
+        if (self.startApp) self.startApp(app);
+        return;
+    }
+    __weak TKWoWViewController *weakSelf=self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.05*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+        [weakSelf startApp:app whenLandscapeIn:scene attempts:attempts-1];
+    });
 }
 - (void)primaryAction {
     // Starting and running own the button; nothing else may close or start.
@@ -2379,6 +2433,9 @@ static NSString *ElementLabel(NSString *element) {
     _starting=NO; _running=NO; _startupFailure=failed?message:nil;
     [_launchProgress stop]; _diagnosticsButton.hidden=!failed;
     if (failed) WKPlayHaptic(WKHapticFailure);
+    // A start that failed while this process can still try again gives the launcher back its
+    // upright screen; once a session was used the game owns the scene.
+    if (failed && !_sessionUsed) [self holdLandscape:NO];
     [self render];
 }
 // Called when the guest's own window appears. Until then the page says it is

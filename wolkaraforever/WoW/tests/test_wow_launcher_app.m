@@ -1004,6 +1004,7 @@ static void TestIPadM5RenderProfile(void) {
 @property(nonatomic) UIViewController *probeHost;
 @property(nonatomic) TKWoWAddonManagerViewController *probeManager;
 @property(nonatomic) NSUInteger launches, setups;
+@property(nonatomic) CGSize launchSceneSize;
 - (UIButton *)row:(NSString *)identifier;
 - (id)settledPresentedController;
 @end
@@ -1061,7 +1062,10 @@ static void TestIPadM5RenderProfile(void) {
     self.window=[[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     self.controller=[[TKWoWViewController alloc] initWithLibrary:(id)fixture];
     __weak TKWoWFixtureDelegate *weakSelf=self;
-    self.controller.startApp=^(TKApp *app) { assert(app==(id)fixture.apps[0]); weakSelf.launches++; };
+    self.controller.startApp=^(TKApp *app) {
+        assert(app==(id)fixture.apps[0]); weakSelf.launches++;
+        weakSelf.launchSceneSize=weakSelf.window.windowScene.coordinateSpace.bounds.size;
+    };
     self.controller.executionMode=TKExecutionModeDeveloperService;
     self.window.rootViewController=[[UINavigationController alloc] initWithRootViewController:self.controller];
     // The app's scene does this to its window; a sheet's colours come from the window, not the page.
@@ -3013,6 +3017,12 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
 }
 
 - (void)checkLaunch {
+    // On an upright phone the launcher turns the scene sideways first and starts the game once
+    // it has turned, so the start is waited for, and the scene it started in is landscape.
+    assert(PumpUntil(^{ return (BOOL)(self.launches==1); }, 5.0));
+    NSLog(@"LAUNCH_SCENE: %@", NSStringFromCGSize(self.launchSceneSize));
+    if (UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPhone)
+        assert(self.launchSceneSize.width>self.launchSceneSize.height);
     assert(self.launches==1); self.controller.sessionUsed=YES;
     [self.controller beginStartup];
     self.controller.startupStatusLabel.text=@"Preparing to run. This can take a few minutes. Keep this app open.";

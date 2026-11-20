@@ -17,6 +17,12 @@ choose one yourself:
 The choice changes the interface only. An earlier choice is kept: a phone that was set to **iPad**
 (shown as iPadOS before) stays on it until you change it.
 
+## Hold the phone either way
+
+The launcher works upright or sideways; on an iPhone Duo's cover screen it is designed to be
+used upright. The game itself always plays sideways: when you tap **Play**, the screen turns to
+landscape first and the game starts once it has turned.
+
 ## Plan storage, network, and controls
 
 Keep enough free storage for the game and updates. Use a reliable network for the first download. If a download stops, reopen the launcher and resume or repair it instead of deleting the app. The phone interface supports touch controls and can use a compatible physical keyboard or controller.

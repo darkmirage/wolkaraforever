@@ -165,6 +165,7 @@ wolkaraforever/Touch/ControllerPointer.h translation/AppKit/ControllerPointer.h 
 wolkaraforever/Touch/ControllerPointer.m translation/AppKit/ControllerPointer.m add
 wolkaraforever/Touch/Fonts.h translation/AppKit/Fonts.h add
 wolkaraforever/Touch/Fonts.m translation/AppKit/Fonts.m add
+wolkaraforever/Touch/HostOrientation.m translation/AppKit/HostOrientation.m add
 wolkaraforever/Touch/InterfaceMode.h translation/AppKit/InterfaceMode.h add
 wolkaraforever/Touch/InterfaceMode.h launcher/WoW/InterfaceMode.h add
 wolkaraforever/Touch/InterfaceMode.m translation/AppKit/InterfaceMode.m add

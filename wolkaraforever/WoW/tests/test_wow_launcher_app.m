@@ -1621,11 +1621,17 @@ static void TestIPadM5RenderProfile(void) {
     // nothing after the capture is looking at a stopped clock. A indicator is stopped for the
     // draw only, and told to stay visible so the page still reads as busy; it is started again
     // afterwards so the fixture goes on driving the same state.
+    //
+    // The instant alone is not enough: the page formats it in the default time zone, so the same
+    // baseline read "Checked 01:13" on the Mac that recorded it and "Checked 23:13" on one two
+    // zones west (measured 2026-11-20). It is drawn in the recording Mac's zone, UTC-5.
     id realCheckedAt=[self.controller valueForKey:@"_checkedAt"];
+    NSTimeZone *realZone=NSTimeZone.defaultTimeZone;
     if (realCheckedAt) {
         static NSDate *baselineClock;
         static dispatch_once_t once;
         dispatch_once(&once, ^{ baselineClock=[NSDate dateWithTimeIntervalSince1970:800000000]; });
+        NSTimeZone.defaultTimeZone=[NSTimeZone timeZoneForSecondsFromGMT:-5*3600];
         [self.controller setValue:baselineClock forKey:@"_checkedAt"];
         [self.controller render];
         [self.window layoutIfNeeded];
@@ -1661,6 +1667,7 @@ static void TestIPadM5RenderProfile(void) {
     [animating makeObjectsPerformSelector:@selector(startAnimating)];
     for (NSUInteger index=0; index<spinners.count; index++) spinners[index].hidesWhenStopped=hides[index].boolValue;
     if (realCheckedAt) {
+        NSTimeZone.defaultTimeZone=realZone;
         [self.controller setValue:realCheckedAt forKey:@"_checkedAt"];
         [self.controller render];
     }
@@ -2890,7 +2897,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(settings != nil);
     assert(CancelActions(settings) == 1);
     assert([[settings.actions valueForKey:@"title"] isEqualToArray:
-        (@[@"Verify and repair game files", @"Diagnostics and logs",
+        (@[@"Verify and repair game files", @"Diagnostics and logs", @"Arm network health for next launch",
            @"Turn on input diagnostics", @"About and open-source licenses", @"Cancel"])]);
     assert(![[settings.actions valueForKey:@"title"] containsObject:@"Manage add-ons"]);
     // Diagnostics, from the sheet: the block the item is wired to is the one that runs.

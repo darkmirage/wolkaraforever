@@ -37,6 +37,12 @@ typedef NS_ENUM(NSInteger, TKAppSource) {
 // From the profile: megabytes of prepared executable memory the runtime writes
 // its own code into; 0 for none.
 @property(nonatomic, readonly) NSUInteger codePool;
+// From the profile: how many of the runtime's processes may run at once in
+// this one (docs/MULTIPROCESS.md); 1 unless it says more.
+@property(nonatomic, readonly) NSUInteger processes;
+// From the profile: the Steam Cloud saves kept in step around each start
+// (profiles/README.md); nil for none.
+@property(nonatomic, readonly, copy, nullable) NSDictionary *steamCloud;
 @property(nonatomic, readonly) NSDate *added;
 @property(nonatomic, readonly, nullable) NSDate *lastLaunched;
 @end
@@ -50,6 +56,11 @@ typedef NS_ENUM(NSInteger, TKAppSource) {
 // `runtime` folder when it names one (a compatibility runtime started with the
 // application's files as the working directory), else under `workingDirectory`.
 + (NSString *)executableOfProfile:(NSDictionary *)profile;
+// Profiles with a `download` block (GameDownload.h) whose application is not
+// in Documents yet, or not all of it: what the library can offer to download.
+- (NSArray<NSDictionary *> *)downloadableProfiles;
+// Every profile with a download, in Documents already or not.
+- (NSArray<NSDictionary *> *)downloadProfiles;
 // `storage` holds apps.json and should not be user-visible; `documents` holds
 // the applications' files and Tolkara's module copies (GuestModules).
 - (instancetype)initWithDocuments:(NSString *)documents storage:(NSString *)storage

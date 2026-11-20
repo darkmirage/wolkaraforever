@@ -32,7 +32,9 @@ int main(int argc, const char **argv) {
         NSError *error=nil;
 
         // Profiles: data only, paths inside Documents, unique identifiers.
-        write_text(@"{\"id\":\"p\",\"name\":\"Profiled\",\"workingDirectory\":\"P/_retail_\",\"executable\":\"P.app/Contents/MacOS/P\"}",[profiles stringByAppendingPathComponent:@"a.json"]);
+        write_text(@"{\"id\":\"p\",\"name\":\"Profiled\",\"workingDirectory\":\"P/_retail_\",\"executable\":\"P.app/Contents/MacOS/P\",\"download\":{"
+            "\"service\":\"blizzard\",\"product\":\"p\",\"regions\":[{\"id\":\"eu\",\"name\":\"Europe\",\"portal\":\"EU\"}],\"locales\":[\"enUS\"],"
+            "\"tags\":[\"OSX\"],\"folder\":\"P.app\",\"root\":\"P\"}}",[profiles stringByAppendingPathComponent:@"a.json"]);
         write_text(@"{\"id\":\"p\",\"name\":\"Duplicate\",\"workingDirectory\":\"Q\",\"executable\":\"Q\"}",[profiles stringByAppendingPathComponent:@"b.json"]);
         write_text(@"{\"id\":\"x\",\"name\":\"Escape\",\"workingDirectory\":\"../x\",\"executable\":\"X\"}",[profiles stringByAppendingPathComponent:@"c.json"]);
         write_text(@"{\"id\":\"y\",\"name\":\"Absolute\",\"workingDirectory\":\"Y\",\"executable\":\"/bin/sh\"}",[profiles stringByAppendingPathComponent:@"d.json"]);
@@ -40,7 +42,8 @@ int main(int argc, const char **argv) {
         // A compatibility runtime elsewhere in Documents with a command line (data only).
         write_text(@"{\"id\":\"w\",\"name\":\"Layered\",\"workingDirectory\":\"W/game\",\"runtime\":\"W/Runtime\",\"executable\":\"bin/run\","
             "\"arguments\":[\"game.exe\",\"--windowed\"],\"environment\":{\"PREFIX\":\"${Documents}/W/prefix\",\"_X1\":\"\"},"
-            "\"libraries\":[\"lib/core.so\"],\"codePool\":64}",[profiles stringByAppendingPathComponent:@"f.json"]);
+            "\"libraries\":[\"lib/core.so\"],\"codePool\":64,\"steamCloud\":{\"appID\":42,\"remoteDirectory\":\"saves/\","
+            "\"localDirectory\":\"W/prefix/saves\",\"fileNames\":[\"a.json\"],\"required\":true}}",[profiles stringByAppendingPathComponent:@"f.json"]);
         write_text(@"{\"id\":\"g\",\"name\":\"Escape\",\"workingDirectory\":\"G\",\"runtime\":\"../R\",\"executable\":\"run\"}",[profiles stringByAppendingPathComponent:@"g.json"]);
         write_text(@"{\"id\":\"h\",\"name\":\"Text\",\"workingDirectory\":\"H\",\"executable\":\"run\",\"arguments\":\"game.exe\"}",[profiles stringByAppendingPathComponent:@"h.json"]);
         write_text(@"{\"id\":\"i\",\"name\":\"Name\",\"workingDirectory\":\"I\",\"executable\":\"run\",\"environment\":{\"1X\":\"a\"}}",[profiles stringByAppendingPathComponent:@"i.json"]);
@@ -50,15 +53,50 @@ int main(int argc, const char **argv) {
         write_text(@"{\"id\":\"l\",\"name\":\"Out\",\"workingDirectory\":\"L\",\"runtime\":\"R\",\"executable\":\"run\",\"libraries\":[\"../core.so\"]}",[profiles stringByAppendingPathComponent:@"l.json"]);
         // A code pool only with a runtime, and in range.
         write_text(@"{\"id\":\"m\",\"name\":\"Pool\",\"workingDirectory\":\"M\",\"executable\":\"run\",\"codePool\":64}",[profiles stringByAppendingPathComponent:@"m.json"]);
-        write_text(@"{\"id\":\"n\",\"name\":\"Huge\",\"workingDirectory\":\"N\",\"runtime\":\"R\",\"executable\":\"run\",\"codePool\":2048}",[profiles stringByAppendingPathComponent:@"n.json"]);
+        write_text(@"{\"id\":\"n\",\"name\":\"Huge\",\"workingDirectory\":\"N\",\"runtime\":\"R\",\"executable\":\"run\",\"codePool\":2049}",[profiles stringByAppendingPathComponent:@"n.json"]);
         write_text(@"{\"id\":\"o\",\"name\":\"Flag\",\"workingDirectory\":\"O\",\"runtime\":\"R\",\"executable\":\"run\",\"codePool\":true}",[profiles stringByAppendingPathComponent:@"o.json"]);
+        // Steam Cloud saves: a Steam app ID, a Documents folder, plain file names.
+        write_text(@"{\"id\":\"q\",\"name\":\"Cloud\",\"workingDirectory\":\"Q\",\"executable\":\"run\",\"steamCloud\":{\"appID\":0,"
+            "\"remoteDirectory\":\"s/\",\"localDirectory\":\"Q/s\",\"fileNames\":[\"a\"]}}",[profiles stringByAppendingPathComponent:@"q.json"]);
+        write_text(@"{\"id\":\"r\",\"name\":\"Cloud\",\"workingDirectory\":\"R\",\"executable\":\"run\",\"steamCloud\":{\"appID\":1,"
+            "\"remoteDirectory\":\"s/\",\"localDirectory\":\"../s\",\"fileNames\":[\"a\"]}}",[profiles stringByAppendingPathComponent:@"r.json"]);
+        write_text(@"{\"id\":\"s\",\"name\":\"Cloud\",\"workingDirectory\":\"S\",\"executable\":\"run\",\"steamCloud\":{\"appID\":1,"
+            "\"remoteDirectory\":\"s/\",\"localDirectory\":\"S/s\",\"fileNames\":[\"d/a\"],\"required\":1}}",[profiles stringByAppendingPathComponent:@"s.json"]);
+        // A download block the launcher does not understand drops the profile.
+        write_text(@"{\"id\":\"t\",\"name\":\"Fetched\",\"workingDirectory\":\"T/_x_\",\"executable\":\"T.app/Contents/MacOS/T\",\"download\":{"
+            "\"service\":\"blizzard\",\"product\":\"t\",\"regions\":[{\"id\":\"eu\",\"name\":\"Europe\",\"portal\":\"EU\"}],\"locales\":[\"enUS\"],"
+            "\"tags\":[\"OSX\"],\"folder\":\"T.app\",\"root\":\"Elsewhere\"}}",[profiles stringByAppendingPathComponent:@"t.json"]);
+        // Not for a runtime's profile, except Steam's own: the Windows client and the runtime it runs in.
+        write_text(@"{\"id\":\"u\",\"name\":\"Fetched\",\"workingDirectory\":\"U/_x_\",\"runtime\":\"U/Runtime\",\"executable\":\"run\",\"download\":{"
+            "\"service\":\"blizzard\",\"product\":\"u\",\"regions\":[{\"id\":\"eu\",\"name\":\"Europe\",\"portal\":\"EU\"}],\"locales\":[\"enUS\"],"
+            "\"tags\":[\"OSX\"],\"folder\":\"U.app\",\"root\":\"U\"}}",[profiles stringByAppendingPathComponent:@"u.json"]);
+        NSString *steamBlock=@"\"download\":{\"service\":\"steam\",\"root\":\"V\",\"client\":\"steam_client_win64\",\"runtime\":{\"url\":\"https://releases.example/r.zip\","
+            "\"sha256\":\"00000000000000000000000000000000000000000000000000000000000000ab\",\"size\":%@}}}";
+        write_text([@"{\"id\":\"v\",\"name\":\"Client\",\"workingDirectory\":\"V/prefix/drive_c/Steam\",\"runtime\":\"V/Wine\",\"executable\":\"bin/wine\","
+            stringByAppendingFormat:steamBlock,@"5"],[profiles stringByAppendingPathComponent:@"v.json"]);
+        write_text([@"{\"id\":\"v2\",\"name\":\"Sizeless\",\"workingDirectory\":\"V/prefix/drive_c/Steam\",\"runtime\":\"V/Wine\",\"executable\":\"bin/wine\","
+            stringByAppendingFormat:steamBlock,@"0"],[profiles stringByAppendingPathComponent:@"v2.json"]);
+        write_text([@"{\"id\":\"v3\",\"name\":\"Bare\",\"workingDirectory\":\"V/prefix/drive_c/Steam\",\"executable\":\"bin/wine\","
+            stringByAppendingFormat:steamBlock,@"5"],[profiles stringByAppendingPathComponent:@"v3.json"]);
+        write_text([@"{\"id\":\"v4\",\"name\":\"Apart\",\"workingDirectory\":\"V/prefix/drive_c/Steam\",\"runtime\":\"W/Wine\",\"executable\":\"bin/wine\","
+            stringByAppendingFormat:steamBlock,@"5"],[profiles stringByAppendingPathComponent:@"v4.json"]);
         NSArray *known=[TKAppLibrary profilesInDirectory:profiles];
-        assert(known.count==2 && [known[0][@"name"] isEqual:@"Profiled"] && [known[1][@"name"] isEqual:@"Layered"]);
+        assert(known.count==3 && [known[0][@"name"] isEqual:@"Profiled"] && [known[1][@"name"] isEqual:@"Layered"] && [known[2][@"name"] isEqual:@"Client"]);
         assert([[TKAppLibrary executableOfProfile:known[0]] isEqual:@"P/_retail_/P.app/Contents/MacOS/P"]);
         assert([[TKAppLibrary executableOfProfile:known[1]] isEqual:@"W/Runtime/bin/run"]);
 
         TKAppLibrary *library=open_library(documents,storage,known);
         assert(!library.apps.count && !library.defaultApp && !library.loadWarning);
+        // A profile with a download block is on offer while its application is not in Documents.
+        assert(library.downloadableProfiles.count==2 && [library.downloadableProfiles[0][@"id"] isEqual:@"p"]);
+        // Steam is on offer while its runtime or its own steam.exe is missing.
+        NSString *clientRuntime=[documents stringByAppendingPathComponent:@"V/Wine/bin/wine"], *client=[documents stringByAppendingPathComponent:@"V/prefix/drive_c/Steam/steam.exe"];
+        write_text(@"runtime",clientRuntime);
+        assert(library.downloadableProfiles.count==2 && [library.downloadableProfiles[1][@"id"] isEqual:@"v"]);
+        write_text(@"client",client);
+        assert(library.downloadableProfiles.count==1 && [library.downloadableProfiles[0][@"id"] isEqual:@"p"]);
+        assert([fm removeItemAtPath:clientRuntime error:NULL] && library.downloadableProfiles.count==2);
+        assert([fm removeItemAtPath:[documents stringByAppendingPathComponent:@"V"] error:NULL]);
 
         // An application bundle inside Documents runs in place, from the folder
         // that contains the bundle, under the bundle's own name.
@@ -132,6 +170,7 @@ int main(int argc, const char **argv) {
         copy_file(fixture,profiled);
         NSArray<TKApp *> *found=[library discover];
         assert(found.count==1 && [found[0].name isEqual:@"Profiled"] && [found[0].profile isEqual:@"p"]);
+        assert(library.downloadableProfiles.count==1 && [library.downloadableProfiles[0][@"id"] isEqual:@"v"]);
         assert([found[0].workingDirectory isEqual:@"P/_retail_"] && found[0].sha256.length==64);
         assert(![library discover].count && library.apps.count==3);
         assert([library removeApp:found[0] error:&error] && library.apps.count==2);
@@ -139,7 +178,7 @@ int main(int argc, const char **argv) {
         assert([fm fileExistsAtPath:profiled]); // files in Documents are never removed
         TKApp *again=[library importExecutable:profiled copy:NO error:&error];
         assert(again && [again.profile isEqual:@"p"] && [again.name isEqual:@"Profiled"]);
-        assert(!again.arguments.count && !again.environment.count && !again.runtime && !again.libraries.count && !again.codePool);
+        assert(!again.arguments.count && !again.environment.count && !again.runtime && !again.libraries.count && !again.codePool && !again.steamCloud);
         assert([library removeApp:again error:&error]);
         // A runtime profile: the executable is the runtime's, the working
         // directory the application's, and the command line comes along.
@@ -152,6 +191,7 @@ int main(int argc, const char **argv) {
         assert([found[0].workingDirectory isEqual:@"W/game"] && [found[0].arguments isEqual:(@[@"game.exe",@"--windowed"])]);
         assert([found[0].environment isEqual:(@{@"PREFIX":@"${Documents}/W/prefix",@"_X1":@""})]);
         assert([found[0].runtime isEqual:@"W/Runtime"] && [found[0].libraries isEqual:(@[@"lib/core.so"])] && found[0].codePool==64);
+        assert([found[0].steamCloud[@"appID"] isEqual:@42] && [found[0].steamCloud[@"required"] boolValue]);
         assert([[library workingDirectoryForApp:found[0] error:&error] isEqual:[documents stringByAppendingPathComponent:@"W/game"]]);
         assert([[library appWithIdentifier:found[0].identifier].arguments count]==2);
         // A newer build's profile names another executable: the entry follows it.

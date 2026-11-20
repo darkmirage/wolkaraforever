@@ -10,9 +10,15 @@ CGError CGWarpMouseCursorPosition(CGPoint point) {
     return kCGErrorSuccess;
 }
 typedef uint32_t CGDirectDisplayID;
+// The guest's display: the game area when the on-screen controls take side columns.
+static CGRect displayBounds(void) {
+    double width, height;
+    return AKScreenGameSize(&width, &height) ? CGRectMake(0, 0, width, height) : UIScreen.mainScreen.bounds;
+}
 typedef CFDictionaryRef CGDisplayModeRef;
 typedef void (*DisplayCallback)(CGDirectDisplayID, uint32_t, void *);
-static NSDictionary *mode(void) { UIScreen *s=UIScreen.mainScreen; return @{@"width":@(s.bounds.size.width),@"height":@(s.bounds.size.height),@"pixelWidth":@(s.bounds.size.width*s.nativeScale),@"pixelHeight":@(s.bounds.size.height*s.nativeScale),@"refresh":@(s.maximumFramesPerSecond)}; }
+// Whole pixels at the whole backing scale the guest is told (AKBackingScale).
+static NSDictionary *mode(void) { UIScreen *s=UIScreen.mainScreen; CGSize b=displayBounds().size; double f=AKBackingScale(s.scale,s.nativeScale); return @{@"width":@(b.width),@"height":@(b.height),@"pixelWidth":@(lround(b.width*f)),@"pixelHeight":@(lround(b.height*f)),@"refresh":@(s.maximumFramesPerSecond)}; }
 CGDirectDisplayID CGMainDisplayID(void) { return 1; }
 CGError CGGetActiveDisplayList(uint32_t capacity,CGDirectDisplayID *displays,uint32_t *count) {
     if (!count || (capacity && !displays)) return kCGErrorIllegalArgument;
@@ -20,11 +26,11 @@ CGError CGGetActiveDisplayList(uint32_t capacity,CGDirectDisplayID *displays,uin
 }
 // Every display there is is online, and there is one.
 CGError CGGetOnlineDisplayList(uint32_t capacity,CGDirectDisplayID *displays,uint32_t *count) { return CGGetActiveDisplayList(capacity,displays,count); }
-CGRect CGDisplayBounds(CGDirectDisplayID d) { return d==1 ? UIScreen.mainScreen.bounds : CGRectZero; }
+CGRect CGDisplayBounds(CGDirectDisplayID d) { return d==1 ? displayBounds() : CGRectZero; }
 // In millimetres, at the 132 points per inch of an iPad's screen.
 CGSize CGDisplayScreenSize(CGDirectDisplayID d) {
     if(d!=1) return CGSizeZero;
-    CGSize points=UIScreen.mainScreen.bounds.size;
+    CGSize points=displayBounds().size;
     return CGSizeMake(points.width*25.4/132.0,points.height*25.4/132.0);
 }
 double CGDisplayRotation(CGDirectDisplayID d) { (void)d; return 0; }
@@ -58,9 +64,10 @@ static NSMutableDictionary<NSString *,id> *observers;
 static NSString *callbackKey(DisplayCallback callback,void *context) { return [NSString stringWithFormat:@"%p:%p",callback,context]; }
 CGError CGDisplayRegisterReconfigurationCallback(DisplayCallback callback,void *context) {
     if(!callback) return kCGErrorIllegalArgument;
+    size_t processSlot=AKCallbackProcess((uintptr_t)callback);
     @synchronized(UIScreen.class) {
         if(!observers) observers=[NSMutableDictionary new]; NSString *key=callbackKey(callback,context);
-        if(!observers[key]) observers[key]=[NSNotificationCenter.defaultCenter addObserverForName:UIScreenModeDidChangeNotification object:UIScreen.mainScreen queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) { (void)n; callback(1,1<<4,context); }];
+        if(!observers[key]) observers[key]=[NSNotificationCenter.defaultCenter addObserverForName:UIScreenModeDidChangeNotification object:UIScreen.mainScreen queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) { (void)n; if (AKEnterProcessCallback(processSlot)) { callback(1,1<<4,context); AKLeaveProcessCallback(processSlot); } }];
     }
     return kCGErrorSuccess;
 }

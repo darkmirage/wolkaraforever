@@ -15,11 +15,23 @@ NGStartupStep ng_startup_step(void);
 // Command-line arguments after the executable path (argv[1..]), for a
 // compatibility runtime started from a profile. Copied; at most 64 of 4096
 // bytes. Call before ng_initialize; default: none.
+// Profile identity for restricted, opt-in runtime experiments.
+void ng_set_profile_identifier(const char *identifier);
 void ng_set_arguments(const char *const *arguments, size_t count);
 // Host-only cleanup before a guest exits; never reads application memory.
 // Install before guest entry. A nonzero exit remains an error exit.
 typedef void (*NGExitObserver)(int code, void *context);
 void ng_set_exit_observer(NGExitObserver observer, void *context);
+// Ends the process as a guest's exit(code) does: the exit observer once, then
+// exit(), with a bound on each part (ProcessEnd.h) so that an exit handler
+// waiting on a guest thread cannot leave a dead screen behind.
+void ng_end_process(int code) __attribute__((noreturn));
+// After a start that stopped: this launch of the app had no room at low
+// addresses for the arena and its code pool, and nothing was prepared.
+bool ng_no_low_room(void);
+// Whether the guest's main was entered and returned, and with what. A game
+// that returns nonzero has still ended.
+bool ng_main_returned(int *code);
 // Libraries a compatibility runtime opens by path instead of linking, placed
 // with the executable as if it carried them (gl_carry): absolute paths inside
 // root, the runtime folder, which then counts as the application's folder.
@@ -30,6 +42,12 @@ void ng_set_libraries(const char *root, const char *const *paths, size_t count);
 // ${CodePool} in the environment's values stands for it, as
 // 0x<start>-0x<end>@0x<writable alias>. Call before ng_initialize; default: none.
 void ng_set_code_pool(size_t size);
+// Processes of a compatibility runtime that may run at once in this one
+// (docs/MULTIPROCESS.md), 1 to 8: each beyond the first gets its own placed
+// copy of the runtime's libraries and a share of the code pool, and starts
+// when the runtime spawns its own executable. Call before ng_initialize;
+// default: 1, as before.
+void ng_set_process_slots(size_t count);
 // Developer service: select our integrated helper before the process's one
 // permitted startup. Fails if Local signing was already selected.
 bool ng_use_local_authorization(void);

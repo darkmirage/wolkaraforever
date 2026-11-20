@@ -26,17 +26,20 @@ Use the application's profile install script, as on the iPad. Tolkara's
 Documents folder also appears in the Finder (your iPhone > Files) and in the
 Files app under On My iPhone.
 
-WoW Forever needs the settings of the beta's own installation: take `portal`,
-`textLocale` and `audioLocale` from `_classic_beta_/WTF/Config.wtf` after you
-have logged in on the Mac (the beta uses `portal "test"`), not from Classic Era.
-It also needs the public system root certificates that a build on your own Mac
-includes by default (`TOLKARA_SYSTEM_ROOTS=YES`; the published unsigned `.ipa`
-has none). Login was refused (`BLZ51900003`) until both were right.
+WoW Forever needs the settings of its own installation: `portal`,
+`textLocale` and `audioLocale` from `_forever_/WTF/Config.wtf` after you have
+logged in on the Mac, not from Classic Era (the earlier Classic beta used
+`portal "test"` from `_classic_beta_`).
+It also needs public root certificates: a build on your own Mac includes that
+Mac's by default (`TOLKARA_SYSTEM_ROOTS=YES`), and the published unsigned
+`.ipa` carries Mozilla's public list since 0.3.1 (before, it had none). Login
+was refused (`BLZ51900003`) until both were right.
 
 ## Input
 
-The [on-screen controls](TOUCH_INPUT.md), a keyboard button and a touch
-trackpad, are shown by default on the iPhone. Turn them off or on with
+The [on-screen controls](TOUCH_INPUT.md), a movement stick on the left half
+(W, A, S and D), a touch trackpad on the right half and a keyboard button, are
+shown by default on the iPhone. Turn them off or on with
 **On-Screen Controls** under the hand button in the library's toolbar.
 
 A Bluetooth keyboard works as on the iPad. A mouse works through

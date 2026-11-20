@@ -15,6 +15,8 @@ FOUNDATION_EXPORT NSNotificationName const TKLocalArenaDidPrepare;
 + (void)probeDirectService:(void (^)(NSString *))completion;
 + (void)probeRemotePairingService:(void (^)(NSString *))completion;
 + (void)probeLocalRouteService:(void (^)(NSString *))completion;
+// The port of this device's developer service: 49152, or where iOS moved it (ServicePort.h).
++ (void)findServicePort:(void (^)(uint16_t port,NSString *report))completion;
 - (void)startAndProbeLocalRoute:(void (^)(NSString *))completion;
 - (void)startAndVerifyPairing:(void (^)(NSString *))completion;
 - (void)startAndVerifyTunnel:(void (^)(NSString *))completion;
@@ -26,3 +28,5 @@ FOUNDATION_EXPORT NSNotificationName const TKLocalArenaDidPrepare;
 // Opt-in development loader only. No route is started or consent requested here.
 // An unavailable/unconfigured helper rejects before any debugger attachment.
 NCPreparation TKPrepareLocalArena(void *address,size_t size,void *context);
+
+NCPreparation TKPrepareLocalArenaPair(void *address,size_t size,void *second,size_t secondSize,void *context);

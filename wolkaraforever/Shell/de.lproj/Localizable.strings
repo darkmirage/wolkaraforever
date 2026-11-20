@@ -44,9 +44,9 @@
 "home.launcher.interfaceMode.message" = "Wähle die Oberfläche, die dieser Launcher steuert. Ein Wechsel installiert, deaktiviert, entfernt oder aktualisiert niemals ein Add-on.";
 "home.launcher.interfaceMode.auto" = "Automatisch";
 "home.launcher.interfaceMode.auto.value" = "Automatisch (%@)";
-"home.launcher.interfaceMode.ipados" = "iPadOS";
-"home.launcher.interfaceMode.ios" = "iOS";
-"home.launcher.interfaceMode.iosduo" = "iOS auf dem Duo";
+"home.launcher.interfaceMode.ipados" = "iPad";
+"home.launcher.interfaceMode.ios" = "iPhone";
+"home.launcher.interfaceMode.iosduo" = "iPhone Duo";
 "home.launcher.interfaceSetup.row" = "Steuerungslayout bearbeiten";
 "home.launcher.interfaceSetup.title" = "Steuerungslayout";
 /* Die drei Zeilen, die früher in einem einzigen Blatt versteckt waren. */

@@ -44,9 +44,9 @@
 "home.launcher.interfaceMode.message" = "Choose the interface this launcher drives. Changing it never installs, disables, removes or updates an add-on.";
 "home.launcher.interfaceMode.auto" = "Automatic";
 "home.launcher.interfaceMode.auto.value" = "Automatic (%@)";
-"home.launcher.interfaceMode.ipados" = "iPadOS";
-"home.launcher.interfaceMode.ios" = "iOS";
-"home.launcher.interfaceMode.iosduo" = "iOS on Duo";
+"home.launcher.interfaceMode.ipados" = "iPad";
+"home.launcher.interfaceMode.ios" = "iPhone";
+"home.launcher.interfaceMode.iosduo" = "iPhone Duo";
 "home.launcher.interfaceSetup.row" = "Edit Controller Layout";
 "home.launcher.interfaceSetup.title" = "Controller Layout";
 /* The three rows that used to be inside the one Controller Layout sheet. */

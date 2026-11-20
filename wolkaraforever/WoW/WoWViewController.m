@@ -1042,9 +1042,11 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // The Launcher Manager's one row: which interface the guest runs. It is a setting, so it
     // follows the page's idle rule, and choosing a mode writes the one key the guest reads -
     // never a package, a file or an installation.
+    NSString *interfaceMode=InterfaceModeLabel(AKInterfaceModeName());
+    if (AKInterfaceModeIsAutomatic())
+        interfaceMode=WKLocalizedFormat(@"home.launcher.interfaceMode.auto.value", interfaceMode);
     [self configureButton:_interfaceModeButton
-        title:WKLocalizedFormat(@"home.launcher.interfaceMode.row",
-            InterfaceModeLabel(AKInterfaceModeName())) filled:NO];
+        title:WKLocalizedFormat(@"home.launcher.interfaceMode.row", interfaceMode) filled:NO];
     _interfaceModeButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
     _interfaceModeButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
     [self configureButton:_interfaceSetupButton
@@ -1913,11 +1915,12 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
     picker.delegate=self;
     [self presentViewController:picker animated:YES completion:nil];
 }
-static NSString *InterfaceModeLabel(NSString *name) {    if ([name isEqual:AKInterfaceModeIPadOS]) return WKLocalized(@"home.launcher.interfaceMode.ipados");
+static NSString *InterfaceModeLabel(NSString *name) {
+    if ([name isEqual:AKInterfaceModeIPadOS]) return WKLocalized(@"home.launcher.interfaceMode.ipados");
     if ([name isEqual:AKInterfaceModeIOSDuo]) return WKLocalized(@"home.launcher.interfaceMode.iosduo");
     return WKLocalized(@"home.launcher.interfaceMode.ios");
 }
-// Which interface this launcher drives: Automatic, iPadOS, iOS, or iOS on Duo. Automatic is the
+// Which interface this launcher drives: Automatic, iPad, iPhone, or iPhone Duo. Automatic is the
 // device's own answer and is labelled with what it resolves to. An explicit choice always wins.
 - (void)chooseInterfaceMode {
     if (_busy || _starting || _running || _sessionUsed) {

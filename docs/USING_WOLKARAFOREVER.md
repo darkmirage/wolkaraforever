@@ -28,7 +28,7 @@ This feature can stop working without notice. Do not include credentials, ticket
 
 ## Change app language or interface
 
-Open **Settings** to choose an app language. Open **Launcher Manager** to choose **iPadOS** or **iOS on Duo**. Interface selection changes the arrangement only; it does not change game data or add-ons.
+Open **Settings** to choose an app language. Open **Launcher Manager** to choose **Automatic**, **iPad**, **iPhone** or **iPhone Duo**; a phone starts at **Automatic** and an iPad at **iPad**. Interface selection changes the arrangement only; it does not change game data or add-ons.
 
 ## Optional network-health diagnostics
 

@@ -323,9 +323,9 @@ static void TestJumpReach(UIView *host, AKPreviewGamepad *manager) {
     puts("TOUCH_GAMEPAD_JUMP_REACH_PASS: with sticks only the jump takes the ring, the gap by the stick and the band below, not beside, above or far below; it holds Space while pressed and always releases it.");
 }
 static void TestFloating(UIView *host, AKPreviewGamepad *manager);
-// The mode's one rule: explicit choices win, "auto" is the device's own hardware class, and
-// anything missing or unrecognised is Standard. Read through the same argument domain the
-// scene uses, and put back exactly what was there.
+// The mode's one rule: explicit choices win, "auto" is the device's own hardware class, nothing
+// chosen is "auto" on a phone and Standard on a tablet, and anything unrecognised is Standard.
+// Read through the same argument domain the scene uses, and put back exactly what was there.
 static void TestInterfaceMode(void) {
     NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
     NSString *key=AKInterfaceModeDefaultsKey;
@@ -349,13 +349,14 @@ static void TestInterfaceMode(void) {
     setMode(@"AUTO"); assert(AKInterfaceModeIsMobile()==phone);
     setMode(@"duo"); assert(!AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic());
     assert([AKInterfaceModeName() isEqual:AKInterfaceModeIPadOS]);
-    setMode(nil); assert(!AKInterfaceModeIsMobile() && !AKInterfaceModeIsAutomatic());
-    assert([AKInterfaceModeStoredName() isEqual:AKInterfaceModeIPadOS]);
+    setMode(nil); assert(AKInterfaceModeIsMobile()==phone && AKInterfaceModeIsAutomatic()==phone);
+    assert([AKInterfaceModeStoredName() isEqual:phone ? AKInterfaceModeAuto : AKInterfaceModeIPadOS]);
+    assert([AKInterfaceModeName() isEqual:AKInterfaceModeAutomaticName()]);
     setMode(AKInterfaceModeIPadOS);
     NSString *automatic=AKInterfaceModeAutomaticName();
     assert(([automatic isEqual:AKInterfaceModeIOS] || [automatic isEqual:AKInterfaceModeIOSDuo])==phone);
     setMode(original);
-    puts("TOUCH_INTERFACE_MODE_PASS: ios and ipados are explicit, auto is the device's own hardware class (spelled in any case), and a missing or unrecognised value is Standard.");
+    puts("TOUCH_INTERFACE_MODE_PASS: ios and ipados are explicit, auto is the device's own hardware class (spelled in any case), a missing value is auto on a phone and Standard on a tablet, and an unrecognised value is Standard.");
 }
 // --- the log a fixture can read ------------------------------------------------
 //

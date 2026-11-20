@@ -12,9 +12,14 @@ NSString *const AKInterfaceModeAuto = @"auto";
 /// Read on every call rather than cached: the launcher writes the key before a
 /// guest starts, and a fixture writes it between two guests in one process, so a
 /// cached copy would make the second read answer for the first.
+///
+/// A phone that never chose follows its own hardware: the iPad interface on a phone was never a
+/// choice anyone made there, only what the key's absence used to mean. A tablet that never
+/// chose keeps Standard, which is also what "auto" resolves to on it.
 static NSString *AKInterfaceModeStored(void) {
     id value = [NSUserDefaults.standardUserDefaults objectForKey:AKInterfaceModeDefaultsKey];
-    return [value isKindOfClass:NSString.class] ? [(NSString *)value lowercaseString] : nil;
+    if ([value isKindOfClass:NSString.class]) return [(NSString *)value lowercaseString];
+    return UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPhone ? AKInterfaceModeAuto : nil;
 }
 
 /// The device's own class, and the only thing "auto" reads: a tablet (and anything else) is
@@ -40,8 +45,7 @@ BOOL AKInterfaceModeIsMobile(void) {
     NSString *stored = AKInterfaceModeStored();
     if ([stored isEqual:AKInterfaceModeIOS] || [stored isEqual:AKInterfaceModeIOSDuo]) return YES;
     if ([stored isEqual:AKInterfaceModeAuto]) return ![AKInterfaceModeHardwareName() isEqual:AKInterfaceModeIPadOS];
-    // "ipados", nothing at all, or something a hand edit invented: the interface every
-    // installation had. Adding "auto" therefore changes no existing installation.
+    // "ipados", nothing on a tablet, or something a hand edit invented: Standard.
     return NO;
 }
 

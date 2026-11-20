@@ -458,6 +458,8 @@
 "touch.settings.stickButtons" = "Stick-Tasten (L3/R3)";
 "touch.settings.stickButtons.hint" = "Zweimal kurz auf einen Stick tippen drückt seine eigene Taste einmal. Das Bewegen des Sticks bleibt unverändert.";
 "touch.settings.stickButtons.unsupported" = "Dieser Controller hat keine Stick-Taste, deshalb bleibt das aus.";
+"touch.settings.stickyTriggers" = "Haltende Trigger (LT/RT)";
+"touch.settings.stickyTriggers.hint" = "Tippe auf einen Trigger, um ihn für deinen nächsten Tastendruck zu halten. Tippe zweimal schnell, um ihn festzustellen; tippe erneut, um ihn zu lösen.";
 "touch.settings.abilityZones" = "Fähigkeitszonen";
 "touch.settings.abilityZones.add" = "Hinzufügen";
 "touch.settings.abilityZones.clear" = "Entfernen";

@@ -120,6 +120,7 @@ NSString *AKGamepadStickButtonElement(NSString *element) {
                     @{@"reason": @"unknown-mode", @"mode": @"full"});
         }
         _stickButtonsEnabled = Number(values[@"stickButtons"],0) != 0;
+        _stickyTriggers = Number(values[@"stickyTriggers"],0) != 0;
         _abilityZones = [self zonesFrom:values[@"abilityZones"]];
         if (_storedVersion < AKLayoutSchemaVersion) {
             // One write, at the moment an old dictionary is understood: the same values, now
@@ -184,7 +185,7 @@ NSString *AKGamepadStickButtonElement(NSString *element) {
         return;
     }
     [_defaults setObject:@{@"version":@(AKLayoutSchemaVersion), @"mode":[self modeName],
-        @"stickButtons":@(_stickButtonsEnabled), @"abilityZones":_abilityZones,
+        @"stickButtons":@(_stickButtonsEnabled), @"stickyTriggers":@(_stickyTriggers), @"abilityZones":_abilityZones,
         @"opacity":@(_opacity),@"rearScale":@(_rearScale),
         @"frontScale":@(_frontScale),@"hapticsEnabled":@(_hapticsEnabled),@"swapShoulders":@(_swapShoulders),
         @"performanceOverlayEnabled":@(_performanceOverlayEnabled),@"sticksOnly":@(_sticksOnly),
@@ -204,6 +205,7 @@ NSString *AKGamepadStickButtonElement(NSString *element) {
     // zones. Turning a feature off is the switch, which keeps what the other arrangement holds.
     _mode = AKGamepadLayoutModeFull;
     _stickButtonsEnabled = NO;
+    _stickyTriggers = NO;
     _abilityZones = @[];
     [_positionsFull removeAllObjects]; [_positionsSimple removeAllObjects]; [self save];
 }
@@ -258,6 +260,12 @@ NSString *AKGamepadStickButtonElement(NSString *element) {
     _stickButtonsEnabled = enabled;
     AKTouchControllerLog(AKTouchControllerEventLayout, enabled ? @"enabled" : @"disabled",
                          @{@"control": @"stickButtons"});
+}
+- (void)setStickyTriggers:(BOOL)enabled {
+    if (_stickyTriggers == enabled) return;
+    _stickyTriggers = enabled;
+    AKTouchControllerLog(AKTouchControllerEventLayout, enabled ? @"enabled" : @"disabled",
+                         @{@"control": @"stickyTriggers"});
 }
 
 // The most zones one layout may carry. Six is a thumb's worth on a phone, and it bounds what a
@@ -377,7 +385,7 @@ static const NSUInteger AKGamepadMaximumZones = 6;
 // a profile the user saves, and for the values the config file carries.
 - (NSDictionary<NSString *, id> *)arrangement {
     return @{@"mode":[self modeName], @"stickButtons":@(_stickButtonsEnabled),
-             @"abilityZones":[self abilityZones],
+             @"stickyTriggers":@(_stickyTriggers), @"abilityZones":[self abilityZones],
              @"opacity":@(_opacity), @"rearScale":@(_rearScale), @"frontScale":@(_frontScale),
              @"hapticsEnabled":@(_hapticsEnabled), @"swapShoulders":@(_swapShoulders),
              @"performanceOverlayEnabled":@(_performanceOverlayEnabled),
@@ -392,6 +400,8 @@ static const NSUInteger AKGamepadMaximumZones = 6;
     if ([values[@"mode"] isKindOfClass:NSString.class]) [self setModeName:values[@"mode"]];
     if ([values[@"stickButtons"] isKindOfClass:NSNumber.class])
         self.stickButtonsEnabled = [values[@"stickButtons"] boolValue];
+    if ([values[@"stickyTriggers"] isKindOfClass:NSNumber.class])
+        self.stickyTriggers = [values[@"stickyTriggers"] boolValue];
     if ([values[@"abilityZones"] isKindOfClass:NSArray.class])
         _abilityZones = [self zonesFrom:values[@"abilityZones"]];
     self.opacity = Number(values[@"opacity"],_opacity);

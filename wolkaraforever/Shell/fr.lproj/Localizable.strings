@@ -459,6 +459,8 @@
 "touch.settings.stickButtons" = "Boutons des sticks (L3/R3)";
 "touch.settings.stickButtons.hint" = "Deux appuis rapides sur un stick enfoncent une fois son propre bouton. Le déplacement du stick ne change pas.";
 "touch.settings.stickButtons.unsupported" = "Cette manette n’a pas de bouton de stick, donc ceci reste désactivé.";
+"touch.settings.stickyTriggers" = "Gâchettes maintenues (LT/RT)";
+"touch.settings.stickyTriggers.hint" = "Touchez une gâchette pour la maintenir jusqu’à votre prochain appui. Touchez deux fois rapidement pour la verrouiller ; touchez à nouveau pour la relâcher.";
 "touch.settings.abilityZones" = "Zones de capacité";
 "touch.settings.abilityZones.add" = "Ajouter";
 "touch.settings.abilityZones.clear" = "Retirer";

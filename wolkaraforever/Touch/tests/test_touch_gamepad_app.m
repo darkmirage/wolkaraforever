@@ -745,6 +745,57 @@ static void AssertSettingsSwitchesReachable(UIView *panel) {
     }
 }
 static void TestTouchControllerTwo(UIView *host, AKPreviewGamepad *manager);
+// Sticky triggers: a tap holds LT/RT until the next press ends, a quick second tap locks it,
+// and nothing the overlay resets may leave a latched trigger held.
+static void TestStickyTriggers(UIView *host, AKPreviewGamepad *manager) {
+    GCControllerButtonInput *(^input)(NSString *)=^(NSString *name){ return manager.created.controller.physicalInputProfile.buttons[name]; };
+    void (^tap)(UIControl *)=^(UIControl *control){
+        [control sendActionsForControlEvents:UIControlEventTouchDown];
+        [control sendActionsForControlEvents:UIControlEventTouchUpInside]; Drain();
+    };
+    UIControl *lt=Button(host,GCInputLeftTrigger), *rt=Button(host,GCInputRightTrigger);
+    UIControl *a=Button(host,GCInputButtonA), *b=Button(host,GCInputButtonB), *x=Button(host,GCInputButtonX);
+    [manager toggleSettings]; [host layoutIfNeeded];
+    UISwitch *sticky=(id)Find(host,@"wolkaraforever.controls.stickyTriggers");
+    assert(sticky && !sticky.on);
+    sticky.on=YES; [sticky sendActionsForControlEvents:UIControlEventValueChanged];
+    [manager toggleSettings]; [host layoutIfNeeded]; Drain();
+    assert([[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults].stickyTriggers);
+    // Armed: held after the finger lifts, released when the next press ends.
+    NSUInteger pulses=manager.feedback.buttons;
+    tap(lt); assert(input(GCInputLeftTrigger).value==1 && manager.feedback.buttons==pulses+1);
+    [a sendActionsForControlEvents:UIControlEventTouchDown]; Drain();
+    assert(input(GCInputButtonA).value==1 && input(GCInputLeftTrigger).value==1);
+    [a sendActionsForControlEvents:UIControlEventTouchUpInside]; Drain();
+    assert(input(GCInputButtonA).value==0 && input(GCInputLeftTrigger).value==0);
+    // A press already down before the tap does not use the latch up; the next one does.
+    [a sendActionsForControlEvents:UIControlEventTouchDown]; tap(lt);
+    [a sendActionsForControlEvents:UIControlEventTouchUpInside]; Drain();
+    assert(input(GCInputLeftTrigger).value==1);
+    tap(b); assert(input(GCInputLeftTrigger).value==0 && input(GCInputButtonB).value==0);
+    // Locked by a quick second tap: it stays through presses until it is tapped again.
+    tap(rt); tap(rt);
+    tap(a); tap(b); assert(input(GCInputRightTrigger).value==1);
+    tap(rt); assert(input(GCInputRightTrigger).value==0);
+    // A slow second tap lets an armed trigger go instead of locking it.
+    tap(lt); usleep(450000); tap(lt); assert(input(GCInputLeftTrigger).value==0);
+    tap(a); assert(input(GCInputLeftTrigger).value==0);
+    // Both triggers armed: one press uses both. The D-pad counts as a press.
+    tap(lt); tap(rt); usleep(450000);
+    tap(x); assert(input(GCInputLeftTrigger).value==0 && input(GCInputRightTrigger).value==0);
+    tap(rt); tap(Button(host,@"dpad.up")); assert(input(GCInputRightTrigger).value==0);
+    // Opening the settings releases a locked trigger, and turning the option off restores a
+    // plain trigger that is held only while touched.
+    tap(lt); tap(lt); assert(input(GCInputLeftTrigger).value==1);
+    [manager toggleSettings]; [host layoutIfNeeded]; Drain();
+    assert(input(GCInputLeftTrigger).value==0);
+    sticky=(id)Find(host,@"wolkaraforever.controls.stickyTriggers");
+    sticky.on=NO; [sticky sendActionsForControlEvents:UIControlEventValueChanged];
+    [manager toggleSettings]; [host layoutIfNeeded]; Drain();
+    [lt sendActionsForControlEvents:UIControlEventTouchDown]; Drain(); assert(input(GCInputLeftTrigger).value==1);
+    [lt sendActionsForControlEvents:UIControlEventTouchUpInside]; Drain(); assert(input(GCInputLeftTrigger).value==0);
+    puts("PASS sticky triggers");
+}
 static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     GCExtendedGamepad *pad=manager.created.controller.extendedGamepad;
     assert(pad && manager.visible);
@@ -807,6 +858,7 @@ static void TestNativeInput(UIView *host, AKPreviewGamepad *manager) {
     [left sendActionsForControlEvents:UIControlEventTouchDown]; Drain(); assert(pad.dpad.xAxis.value==0);
     [left sendActionsForControlEvents:UIControlEventTouchUpInside];
     [right sendActionsForControlEvents:UIControlEventTouchUpInside]; Drain(); assert(pad.dpad.xAxis.value==0);
+    TestStickyTriggers(host,manager);
     UIControl *leftStick=(id)Find(host,@"tolkara.gamepad.leftStick"), *rightStick=(id)Find(host,@"tolkara.gamepad.rightStick");
     AKFixtureTouch *touch=[AKFixtureTouch new]; touch.point=CGPointMake(leftStick.bounds.size.width,leftStick.bounds.size.height/2);
     assert([leftStick beginTrackingWithTouch:touch withEvent:nil]);

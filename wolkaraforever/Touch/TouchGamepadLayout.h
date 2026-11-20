@@ -41,6 +41,9 @@ typedef NS_ENUM(NSInteger, AKGamepadLayoutMode) {
 - (BOOL)setModeName:(NSString *)name;
 /// A double tap on a stick presses that stick's own button. Off unless the user asks for it.
 @property(nonatomic) BOOL stickButtonsEnabled;
+/// A tap on LT or RT holds it until the next press ends; a quick second tap locks it until it
+/// is tapped again. For a trigger used as a modifier with one thumb. Off unless asked for.
+@property(nonatomic) BOOL stickyTriggers;
 /// Extra on-screen surfaces, each sending one gamepad element while it is touched. Empty by
 /// default; each is @{@"element", @"x", @"y"} with the centre as fractions of the screen.
 @property(nonatomic, copy, readonly) NSArray<NSDictionary<NSString *, id> *> *abilityZones;

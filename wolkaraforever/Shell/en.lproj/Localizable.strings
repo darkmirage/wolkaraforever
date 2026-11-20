@@ -460,6 +460,8 @@
 "touch.settings.stickButtons" = "Stick buttons (L3/R3)";
 "touch.settings.stickButtons.hint" = "A double tap on a stick presses its own button once. Moving the stick is unchanged.";
 "touch.settings.stickButtons.unsupported" = "This controller has no stick button, so this stays off.";
+"touch.settings.stickyTriggers" = "Sticky triggers (LT/RT)";
+"touch.settings.stickyTriggers.hint" = "Tap a trigger to hold it for your next button press. Tap twice quickly to lock it; tap again to let go.";
 "touch.settings.abilityZones" = "Ability zones";
 "touch.settings.abilityZones.add" = "Add";
 "touch.settings.abilityZones.clear" = "Clear";

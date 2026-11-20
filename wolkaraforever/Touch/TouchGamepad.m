@@ -32,6 +32,8 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 @property(nonatomic, copy) NSString *slot;
 @property(nonatomic, readonly) BOOL pressed;
 @property(nonatomic) NSInteger sector;
+/// Sticky trigger state, drawn only: 0 none, 1 armed for the next press, 2 locked.
+@property(nonatomic) NSInteger latch;
 - (void)releaseInput;
 @end
 @implementation AKGamepadButton { CAShapeLayer *_sectorLayer; UIBezierPath *_sectorPath; }
@@ -52,9 +54,21 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size) {
 - (void)setPressed:(BOOL)pressed {
     if (_pressed == pressed) return;
     _pressed = pressed;
-    UIColor *color = pressed ? [UIColor colorWithRed:0.1 green:0.55 blue:0.65 alpha:0.8] : [UIColor colorWithWhite:0.13 alpha:0.64];
-    if (_sector >= 0) _sectorLayer.fillColor = color.CGColor; else self.backgroundColor = color;
+    [self updateFill];
     [self sendActionsForControlEvents:UIControlEventValueChanged];
+}
+- (void)setLatch:(NSInteger)latch {
+    if (_latch == latch) return;
+    _latch = latch;
+    [self updateFill];
+    if (_sector < 0) {
+        self.layer.borderWidth = latch == 2 ? 3 : 1;
+        self.layer.borderColor = [UIColor colorWithWhite:1 alpha:latch == 2 ? 0.9 : 0.3].CGColor;
+    }
+}
+- (void)updateFill {
+    UIColor *color = (_pressed || _latch) ? [UIColor colorWithRed:0.1 green:0.55 blue:0.65 alpha:0.8] : [UIColor colorWithWhite:0.13 alpha:0.64];
+    if (_sector >= 0) _sectorLayer.fillColor = color.CGColor; else self.backgroundColor = color;
 }
 - (void)setSector:(NSInteger)sector {
     _sector = sector; self.backgroundColor = UIColor.clearColor; self.layer.borderWidth = 0;
@@ -260,6 +274,8 @@ static const CGFloat AKAutoRunArm = 60;
 // virtual controller does not (measured: its extended profile carries no stick-button
 // element at all), so on it the gesture is refused rather than pretended.
 @property(nonatomic) BOOL stickButtonsAvailable;
+// Called by every reset: a latched trigger is something this overlay is holding too.
+@property(nonatomic, copy, nullable) void (^latchesReset)(NSString *reason);
 - (void)reset;
 - (void)toggleSettings;
 - (void)finishConfiguration;
@@ -284,7 +300,7 @@ static const CGFloat AKFloatRightMinX = 0.64, AKFloatRightMinY = 0.25, AKFloatRi
     UIButton *_editDone;
     UILabel *_hint;
     UISwitch *_editSwitch, *_hapticsSwitch, *_overlaySwitch, *_swapShouldersSwitch, *_sticksOnlySwitch;
-    UISwitch *_floatingSwitch, *_simpleSwitch, *_stickButtonsSwitch;
+    UISwitch *_floatingSwitch, *_simpleSwitch, *_stickButtonsSwitch, *_stickyTriggersSwitch;
     UIButton *_addZoneButton, *_clearZoneButton;
     // The ability zones on screen, in the order the layout lists them.
     NSMutableArray<AKGamepadButton *> *_zoneButtons;
@@ -628,6 +644,11 @@ static const CGFloat AKFloatRightMinX = 0.64, AKFloatRightMinY = 0.25, AKFloatRi
     BOOL simple = _preferences.mode == AKGamepadLayoutModeSimple;
     _swapShouldersSwitch.enabled = !simple;
     _swapShouldersSwitch.accessibilityHint = simple ? AKHostLocalized(@"touch.settings.outerTriggers.simple") : nil;
+}
+- (void)stickyTriggersChanged:(UISwitch *)sender {
+    [self reset];
+    _preferences.stickyTriggers = sender.on;
+    [_preferences save];
 }
 - (void)stickButtonsChanged:(UISwitch *)sender {
     [self releaseStickButton:@"disabled"];
@@ -1117,6 +1138,17 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     stickButtonsRow.axis = UILayoutConstraintAxisHorizontal; stickButtonsRow.alignment = UIStackViewAlignmentCenter;
     [self fitSettingsRow:stickButtonsRow];
     [options addArrangedSubview:stickButtonsRow];
+    // Triggers as modifiers with one thumb: tap to hold for the next press, double-tap to lock.
+    _stickyTriggersSwitch = [UISwitch new]; _stickyTriggersSwitch.on = _preferences.stickyTriggers;
+    _stickyTriggersSwitch.accessibilityLabel = AKHostLocalized(@"touch.settings.stickyTriggers");
+    _stickyTriggersSwitch.accessibilityHint = AKHostLocalized(@"touch.settings.stickyTriggers.hint");
+    _stickyTriggersSwitch.accessibilityIdentifier = @"wolkaraforever.controls.stickyTriggers";
+    [_stickyTriggersSwitch addTarget:self action:@selector(stickyTriggersChanged:) forControlEvents:UIControlEventValueChanged];
+    UIStackView *stickyTriggersRow = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:AKHostLocalized(@"touch.settings.stickyTriggers")],_stickyTriggersSwitch]];
+    stickyTriggersRow.axis = UILayoutConstraintAxisHorizontal; stickyTriggersRow.alignment = UIStackViewAlignmentCenter;
+    [self fitSettingsRow:stickyTriggersRow];
+    [options addArrangedSubview:stickyTriggersRow];
+    [options addArrangedSubview:[self label:AKHostLocalized(@"touch.settings.stickyTriggers.hint")]];
     _addZoneButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [_addZoneButton setTitle:AKHostLocalized(@"touch.settings.abilityZones.add") forState:UIControlStateNormal];
     _addZoneButton.accessibilityIdentifier = @"wolkaraforever.controls.addAbilityZone";
@@ -1186,7 +1218,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     if (!sender.on) return;
     [self reset]; _editing = YES; [_settings removeFromSuperview]; _settings = nil;
     _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _sticksOnlySwitch = nil; _floatingSwitch = nil; _settingsColumns = nil;
-    _simpleSwitch = nil; _stickButtonsSwitch = nil; _addZoneButton = nil; _clearZoneButton = nil;
+    _simpleSwitch = nil; _stickButtonsSwitch = nil; _stickyTriggersSwitch = nil; _addZoneButton = nil; _clearZoneButton = nil;
     [self updateAppearance]; if (self.configurationChanged) self.configurationChanged();
     // The zones' own menus (which button each sends) belong to the editor.
     [self syncAbilityZones];
@@ -1199,13 +1231,14 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     _sticksOnlySwitch.on = _preferences.sticksOnly; _floatingSwitch.on = _preferences.floatingSticks;
     _simpleSwitch.on = _preferences.mode == AKGamepadLayoutModeSimple;
     _stickButtonsSwitch.on = _preferences.stickButtonsEnabled;
+    _stickyTriggersSwitch.on = _preferences.stickyTriggers;
     [self syncAbilityZones]; [self updateSettingsZoneCount];
     [self updateValues]; [self updateAppearance];
 }
 - (void)finishConfiguration {
     [self reset]; [_preferences save]; _editing = NO; [_dragOrigins removeAllObjects];
     [_settings removeFromSuperview]; _settings = nil; _sliders = nil; _values = nil; _editSwitch = nil; _hapticsSwitch = nil; _overlaySwitch = nil; _swapShouldersSwitch = nil; _sticksOnlySwitch = nil; _floatingSwitch = nil; _settingsColumns = nil;
-    _simpleSwitch = nil; _stickButtonsSwitch = nil; _addZoneButton = nil; _clearZoneButton = nil;
+    _simpleSwitch = nil; _stickButtonsSwitch = nil; _stickyTriggersSwitch = nil; _addZoneButton = nil; _clearZoneButton = nil;
     [self syncAbilityZones];
     [self updateAppearance]; if (self.configurationChanged) self.configurationChanged();
 }
@@ -1216,6 +1249,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     [self releaseStickButton:@"reset"];
     for (AKGamepadButton *zone in _zoneButtons) [zone releaseInput];
     for (AKGamepadButton *button in _buttons.allValues) [button releaseInput];
+    if (self.latchesReset) self.latchesReset(@"reset");
     [_leftStick reset]; [_rightStick reset];
 }
 @end
@@ -1230,6 +1264,12 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     // down and returns to 0 only when the last one lets go, so a release can never cut another
     // finger's press short.
     NSMutableDictionary<NSString *, NSNumber *> *_holds;
+    // Sticky triggers, by slot: the element each latched trigger holds, when it was armed, and
+    // the presses made since. An armed trigger lets go once every press made after it has
+    // ended; a locked one only when it is tapped again.
+    NSMutableDictionary<NSString *, NSString *> *_latchElements;
+    NSMutableDictionary<NSString *, NSNumber *> *_latchStates, *_armedAt;
+    NSCountedSet<NSString *> *_chord;
     BOOL _active, _connecting, _cancelConnect, _failed, _invalidated;
     BOOL _controllerArrived;
     BOOL _spaceDown;
@@ -1238,6 +1278,8 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     if ((self = [super init])) {
         _host = host; _enabled = YES;
         _holds = [NSMutableDictionary new];
+        _latchElements = [NSMutableDictionary new]; _latchStates = [NSMutableDictionary new];
+        _armedAt = [NSMutableDictionary new]; _chord = [NSCountedSet new];
         _haptics = [self makeHaptics];
         _overlay = [[AKGamepadOverlay alloc] initWithFrame:host.bounds];
         _overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
@@ -1256,6 +1298,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
             if (pressed) [self pressElement:element control:control];
             else [self releaseElement:element control:control reason:reason];
         };
+        _overlay.latchesReset = ^(NSString *reason) { [weakSelf releaseLatches:reason]; };
         for (AKGamepadButton *button in _overlay.buttons.allValues)
             [button addTarget:self action:@selector(buttonChanged:) forControlEvents:UIControlEventValueChanged];
         [_overlay.leftStick addTarget:self action:@selector(stickChanged:) forControlEvents:UIControlEventValueChanged];
@@ -1351,6 +1394,11 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     [(id<AKTouchControlsDelegate>)_host touchKey:49 characters:@" " pressed:down];
 }
 - (void)buttonChanged:(AKGamepadButton *)button {
+    if ([self isStickyTrigger:button]) {
+        // The finger's own release means nothing here: the latch decides when the trigger lets go.
+        if (button.pressed) [self tapStickyTrigger:button];
+        return;
+    }
     if ([self jumpsWithSpace:button]) {
         if (!button.pressed) { [self holdSpace:NO]; return; }
         if (!_visible || _overlay.configuring) return;
@@ -1365,6 +1413,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
             [self updateDirectionPad];
             AKTouchControllerLog(AKTouchControllerEventRelease, @"sent",
                                  @{@"control": @"button", @"element": AKGamepadElementToken(button.element), @"reason": @"lifted"});
+            [self chordEnded:button.element];
             return;
         }
         if (!_visible || _overlay.configuring) {
@@ -1376,6 +1425,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
         [self updateDirectionPad];
         AKTouchControllerLog(AKTouchControllerEventPress, @"sent",
                              @{@"control": @"button", @"element": AKGamepadElementToken(button.element)});
+        [self chordBegan:button.element];
         return;
     }
     // A release always goes out, whatever the controls are doing by then: a press whose
@@ -1419,6 +1469,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     AKTouchControllerLog(AKTouchControllerEventPress, @"sent",
                          @{@"control": control, @"element": AKGamepadElementToken(element),
                            @"count": [@(count + 1) stringValue]});
+    if (![control isEqualToString:@"stickyTrigger"]) [self chordBegan:element];
 }
 - (void)releaseElement:(NSString *)element control:(NSString *)control reason:(NSString *)reason {
     if (!element.length) return;
@@ -1436,6 +1487,7 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
     AKTouchControllerLog(AKTouchControllerEventRelease, @"sent",
                          @{@"control": control, @"element": AKGamepadElementToken(element),
                            @"count": [@(count - 1) stringValue], @"reason": reason ?: @"lifted"});
+    if (![control isEqualToString:@"stickyTrigger"]) [self chordEnded:element];
 }
 // Everything this manager is holding, released once each. Used at teardown, where the virtual
 // controller is about to go away and nothing may be left pressed.
@@ -1449,11 +1501,78 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
                              @{@"control": @"button", @"element": AKGamepadElementToken(element), @"reason": reason ?: @"teardown"});
     }
     [_holds removeAllObjects];
+    [self clearLatches];
+}
+#pragma mark - Sticky triggers
+// Holding a trigger as a modifier takes a thumb off the face buttons. With sticky triggers on,
+// a tap holds LT or RT until the next press ends; a second tap within AKStickyLockInterval
+// locks it until tapped again. One tap is still one trigger press: nothing is pressed for
+// the player, and a latch never outlives the controls being shown.
+static const NSTimeInterval AKStickyLockInterval = 0.4;
+- (BOOL)isStickyTrigger:(AKGamepadButton *)button {
+    // A trigger that is latched stays sticky until it lets go, even if the setting changed
+    // underneath it: the plain path would never release the latch's own hold.
+    if (_latchElements[button.slot]) return YES;
+    return _overlay.preferences.stickyTriggers &&
+        ([button.slot isEqualToString:GCInputLeftTrigger] || [button.slot isEqualToString:GCInputRightTrigger]);
+}
+- (NSTimeInterval)now { return CACurrentMediaTime(); }
+- (void)tapStickyTrigger:(AKGamepadButton *)button {
+    NSString *slot = button.slot;
+    NSInteger state = _latchStates[slot].integerValue;
+    if (state == 0) {
+        NSString *element = button.element;
+        NSUInteger before = _holds[element].unsignedIntegerValue;
+        [self pressElement:element control:@"stickyTrigger"];
+        if (_holds[element].unsignedIntegerValue == before) return;  // Refused: hidden or configuring.
+        [_haptics buttonPressed];
+        _latchElements[slot] = element; _latchStates[slot] = @1; _armedAt[slot] = @([self now]);
+        button.latch = 1;
+    } else if (state == 1 && [self now] - _armedAt[slot].doubleValue <= AKStickyLockInterval) {
+        [_haptics buttonPressed];
+        _latchStates[slot] = @2; button.latch = 2;
+        AKTouchControllerLog(AKTouchControllerEventLayout, @"locked",
+                             @{@"control": @"stickyTrigger", @"element": AKGamepadElementToken(_latchElements[slot])});
+    } else {
+        [self releaseLatch:slot reason:@"tapped"];
+    }
+}
+- (void)releaseLatch:(NSString *)slot reason:(NSString *)reason {
+    NSString *element = _latchElements[slot];
+    if (!element) return;
+    [_latchElements removeObjectForKey:slot]; [_latchStates removeObjectForKey:slot]; [_armedAt removeObjectForKey:slot];
+    _overlay.buttons[slot].latch = 0;
+    [self releaseElement:element control:@"stickyTrigger" reason:reason];
+}
+- (void)releaseLatches:(NSString *)reason {
+    for (NSString *slot in _latchElements.allKeys) [self releaseLatch:slot reason:reason];
+    [_chord removeAllObjects];
+}
+// Teardown has already zeroed every hold; only the latches' own state and drawing remain.
+- (void)clearLatches {
+    for (NSString *slot in _latchElements.allKeys) _overlay.buttons[slot].latch = 0;
+    [_latchElements removeAllObjects]; [_latchStates removeAllObjects]; [_armedAt removeAllObjects];
+    [_chord removeAllObjects];
+}
+- (BOOL)hasArmedLatch {
+    for (NSNumber *state in _latchStates.allValues) if (state.integerValue == 1) return YES;
+    return NO;
+}
+- (void)chordBegan:(NSString *)element {
+    if ([self hasArmedLatch]) [_chord addObject:element];
+}
+- (void)chordEnded:(NSString *)element {
+    if (![_chord containsObject:element]) return;
+    [_chord removeObject:element];
+    if (_chord.count) return;
+    for (NSString *slot in _latchStates.allKeys)
+        if (_latchStates[slot].integerValue == 1) [self releaseLatch:slot reason:@"used"];
 }
 - (void)reloadLayout {
     // The controller may have come or gone since the overlay last looked, so what it can send
     // is re-read here too: the settings row and the gesture both depend on it.
     _overlay.stickButtonsAvailable = [self stickButtonsAvailable];
+    [self releaseLatches:@"layout"];
     [_overlay reloadLayout];
     [self updateHaptics];
 }

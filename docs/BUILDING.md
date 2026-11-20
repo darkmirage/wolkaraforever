@@ -60,9 +60,17 @@ Each mode's own setup, and what to do when it is not ready, is in
 - Local signing needs a container that matches the executable. A container built from the
   on-disk code is valid only for an application that does not rewrite its own code at launch;
   where it does, the container must come from a capture of the final code pages
-  (`TOLKARA_CAPTURE`), which the tooling cannot produce for every application. A container that
-  does not match stops the launch before more application code runs, and
-  `Documents/native-guest.log` says why (`[signed-image] FATAL …`).
+  (`TOLKARA_CAPTURE`). A Developer service launch with `--capture-final-pages`
+  (`wolkaraforever/tools/launch.sh --restart --local-game-startup --capture-final-pages`) writes
+  that capture to the app's `Documents/LocalSigning/capture.bin` once the application's
+  unpacking initializer has run; copy it and the executable into `build/`, set `GUEST_EXE` and
+  `TOLKARA_CAPTURE`, and install with `TOLKARA_MODE=local-signing`. The capture and the
+  container are derived copies of the application's code: they stay on your Mac and device and
+  are never committed. A container that does not match stops the launch before more
+  application code runs, and `Documents/native-guest.log` says why (`[signed-image] FATAL …`).
+  When Local signing finds no container for the executable at all, typically after a game
+  update, that launch uses Developer service instead and the log says so; Local signing stays
+  the saved choice, so a container rebuilt for the new executable is used again.
 - External JIT needs the enabler at every launch and refuses guest entry while any debugger
   remains attached. It is a diagnostics route, not the supported integrated one.
 

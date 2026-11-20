@@ -98,6 +98,7 @@ static NSString *const AKChatComposerEnabledDefaultsKey = @"AKChatComposerEnable
 @property(nonatomic, strong) TKSteamCloudCoordinator *steamCloud;
 @property(nonatomic) BOOL cloudPrepared;
 @property(nonatomic) BOOL cloudPreparing;
+@property(nonatomic) BOOL localSigningFallback;
 @property(nonatomic) BOOL cloudFullStartup;
 @property(nonatomic, strong) TKApp *cloudApp;
 @property(nonatomic, copy) NSString *cloudContainer;
@@ -1139,6 +1140,16 @@ static NSString *AKAudioStateDescription(void) {
             }
             if(!container) {
                 PrepareLocalSigningFolder();
+#if TOLKARA_INTEGRATED_AUTH
+                // Typically a game update changed the executable. This launch takes
+                // Developer service; Local signing stays the saved choice, so a
+                // container rebuilt for the new executable is used again.
+                if(TKExecutionModeAvailable(TKExecutionModeDeveloperService,NULL)) {
+                    self.localSigningFallback=YES;
+                    [self launchLocalApp:app];
+                    return;
+                }
+#endif
                 [self.wowController finishStartupWithMessage:LocalSigningNeeds(sha?:app.sha256) failed:YES];
                 [self alert:WKLocalized(@"shell.containerNeeded.title") message:LocalSigningNeeds(sha?:app.sha256)];
                 return;
@@ -1483,6 +1494,7 @@ static NSString *AKAudioStateDescription(void) {
     setvbuf(stdout, NULL, _IOLBF, 0);
     for (NSString *argument in arguments) if ([argument hasPrefix:@"--probe-run-id="]) fprintf(log,"%s\n",argument.UTF8String);
     fprintf(log,"[host] execution mode=%s source=%s\n",ModeIdentifier(self.executionMode),self.executionModeSource.UTF8String);
+    if (self.localSigningFallback) fprintf(log,"[host] Local signing has no page container for this executable; this launch uses Developer service\n");
     // The controller inspector starts before this log exists, and AKLog writes
     // to stderr, so its first report went nowhere. Report again now that the
     // log is attached: this is the inventory, and everything pressed follows it.

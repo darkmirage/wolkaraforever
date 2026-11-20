@@ -636,7 +636,7 @@
 "addons.remove" = "Retirer de l’appareil";
 
 /* ---- Voix et dictée ---- */
-"voice.title" = "Configuration des touches et boutons de manette";
+"voice.title" = "Bouton pour parler";
 "voice.test.title" = "Tester la voix";
 "voice.test.open" = "Tester la dictée";
 "voice.intro" = "Rien ne se déclenche tout seul ici. Tant que ce réglage n’est pas activé et qu’aucun bouton n’est choisi, le micro n’est jamais ouvert et aucune manette ne change de comportement.";
@@ -688,7 +688,7 @@
 "voice.language.french" = "Français";
 "voice.language.spanish" = "Espagnol";
 "voice.language.unavailable" = "%@ ne peut pas être reconnu sur cet iPad ; Système a donc été utilisé pour cette prise.";
-"touchpad.title" = "Configuration du pavé tactile de la manette";
+"touchpad.title" = "Pavé tactile de la manette";
 "touchpad.intro" = "Activez cette option seulement si vous voulez que le pavé tactile d’une manette connectée contrôle le pointeur. Un doigt déplace, deux doigts font défiler et le clic physique agit comme un bouton de souris.";
 "touchpad.heading.pointer" = "Pointeur";
 "touchpad.enabled" = "Utiliser le pavé tactile comme souris";

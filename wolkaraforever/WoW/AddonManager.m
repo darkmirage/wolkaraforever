@@ -906,7 +906,7 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     _startInBrowse=recommendation==TKAddonRecommendationMacEver;
     _tab=_startInBrowse?TKAddonHubTabBrowse:TKAddonHubTabMyAddOns;
     _recommendedProjectID=recommendation==TKAddonRecommendationMacEver?@1733200:nil;
-    _addOnsDirectory=directory.copy; _edition=edition.copy; _addons=@[]; self.title=WKLocalized(@"addons.title").uppercaseString;
+    _addOnsDirectory=directory.copy; _edition=edition.copy; _addons=@[]; self.title=WKLocalized(@"addons.title");
     _store=[[TKAddonStore alloc] initWithAddOnsDirectory:directory product:@"wowf" gameVersion:TKForeverGameVersion]; _results=@[]; _sortField=TKCurseForgeDefaultSortField(); _sortOrder=@"desc";
     _credentials=[TKAddonCredentialStore new];
     _gameVersion=TKForeverGameVersion;
@@ -1059,7 +1059,27 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
         _selectionLabel,_selectAllButton,_clearSelectionButton,_updateSelectedButton,_updateAllButton]];
     toolbar.axis=UILayoutConstraintAxisHorizontal; toolbar.spacing=10; toolbar.alignment=UIStackViewAlignmentCenter;
     toolbar.translatesAutoresizingMaskIntoConstraints=NO;
-    [header addSubview:toolbar];
+    // On a narrow page - the Duo's cover screen held upright - the menu names do not all fit, and
+    // a truncated "Filter add-…" is a control nobody can read. The row scrolls sideways instead;
+    // where there is room it fills the width exactly as before.
+    UIScrollView *toolbarScroll=[UIScrollView new];
+    toolbarScroll.accessibilityIdentifier=@"wow.addons.toolbar";
+    toolbarScroll.showsHorizontalScrollIndicator=NO;
+    toolbarScroll.alwaysBounceHorizontal=NO;
+    toolbarScroll.translatesAutoresizingMaskIntoConstraints=NO;
+    [toolbarScroll addSubview:toolbar];
+    [header addSubview:toolbarScroll];
+    NSLayoutConstraint *fillToolbar=[toolbar.widthAnchor constraintEqualToAnchor:toolbarScroll.frameLayoutGuide.widthAnchor];
+    fillToolbar.priority=UILayoutPriorityDefaultLow-1;
+    [NSLayoutConstraint activateConstraints:@[
+        [toolbar.leadingAnchor constraintEqualToAnchor:toolbarScroll.contentLayoutGuide.leadingAnchor],
+        [toolbar.trailingAnchor constraintEqualToAnchor:toolbarScroll.contentLayoutGuide.trailingAnchor],
+        [toolbar.topAnchor constraintEqualToAnchor:toolbarScroll.contentLayoutGuide.topAnchor],
+        [toolbar.bottomAnchor constraintEqualToAnchor:toolbarScroll.contentLayoutGuide.bottomAnchor],
+        [toolbar.heightAnchor constraintEqualToAnchor:toolbarScroll.frameLayoutGuide.heightAnchor],
+        [toolbar.widthAnchor constraintGreaterThanOrEqualToAnchor:toolbarScroll.frameLayoutGuide.widthAnchor],
+        fillToolbar,
+    ]];
     // 14 + 42 + 16 + 36 + 8 + 44 + 8 + 34 + 10 = 212, the height the fixture measures. Kept as
     // constraints rather than offsets so a wider page widens the panels instead of moving them.
     [NSLayoutConstraint activateConstraints:@[
@@ -1078,10 +1098,10 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
         [_search.trailingAnchor constraintEqualToAnchor:gutters.trailingAnchor constant:-TKAddonPageMargin],
         [_search.topAnchor constraintEqualToAnchor:_mode.bottomAnchor constant:8],
         [_search.heightAnchor constraintEqualToConstant:44],
-        [toolbar.leadingAnchor constraintEqualToAnchor:gutters.leadingAnchor constant:TKAddonPageMargin],
-        [toolbar.trailingAnchor constraintEqualToAnchor:gutters.trailingAnchor constant:-TKAddonPageMargin],
-        [toolbar.topAnchor constraintEqualToAnchor:_search.bottomAnchor constant:8],
-        [toolbar.heightAnchor constraintEqualToConstant:34],
+        [toolbarScroll.leadingAnchor constraintEqualToAnchor:gutters.leadingAnchor constant:TKAddonPageMargin],
+        [toolbarScroll.trailingAnchor constraintEqualToAnchor:gutters.trailingAnchor constant:-TKAddonPageMargin],
+        [toolbarScroll.topAnchor constraintEqualToAnchor:_search.bottomAnchor constant:8],
+        [toolbarScroll.heightAnchor constraintEqualToConstant:34],
         // Minimum widths, not fixed ones: the titles are localized sentences and must be able to
         // grow. The count label beside them absorbs the difference.
         [_sortButton.widthAnchor constraintGreaterThanOrEqualToConstant:96],

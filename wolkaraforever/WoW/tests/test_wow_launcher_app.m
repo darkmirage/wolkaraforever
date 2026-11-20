@@ -2699,7 +2699,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     UINavigationController *frame = [self settledPresentedController];
     assert([frame isKindOfClass:UINavigationController.class]);
     UIViewController *page = frame.topViewController;
-    assert([page.title isEqual:@"ADD-ON-VERWALTUNG"]);
+    assert([page.title isEqual:@"Add-on-Verwaltung"]);
     [self.window layoutIfNeeded];
     [self assertGermanOnlyInView:page.view page:@"ADD-ON-VERWALTUNG"];
     [self capture:@"wow-addons-de.png"];
@@ -2715,7 +2715,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert([frame isKindOfClass:UINavigationController.class]);
     UIViewController *page = frame.topViewController;
     assert([page isKindOfClass:AKVoiceViewController.class]);
-    assert([page.title isEqual:@"TASTEN UND CONTROLLER-BUTTONS BELEGEN"]);
+    assert([page.title isEqual:@"Sprechtaste"]);
     [self.window layoutIfNeeded];
     [self assertGermanOnlyInView:page.view page:@"voice settings"];
     [self capture:@"wow-voice-de.png"];
@@ -2729,7 +2729,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert([frame isKindOfClass:UINavigationController.class]);
     UIViewController *page = frame.topViewController;
     assert([page isKindOfClass:AKVoiceTestViewController.class]);
-    assert([page.title isEqual:@"SPRACHE TESTEN"]);
+    assert([page.title isEqual:@"Sprache testen"]);
     [self.window layoutIfNeeded];
     [self assertGermanOnlyInView:page.view page:@"voice test"];
     [self capture:@"wow-voice-test-de.png"];

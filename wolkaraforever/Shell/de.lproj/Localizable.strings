@@ -634,7 +634,7 @@
 "addons.action.manage" = "Verwalten";
 "addons.manage.unmanaged" = "Dieses vorhandene Add-on wird von diesem Gerät entfernt.";
 /* ---- Voice and dictation ---- */
-"voice.title" = "Tasten und Controller-Buttons belegen";
+"voice.title" = "Sprechtaste";
 "voice.test.title" = "Sprache testen";
 "voice.test.open" = "Diktat testen";
 "voice.intro" = "Nichts hier geschieht von selbst. Solange die Funktion nicht eingeschaltet und eine Taste belegt ist, wird das Mikrofon nie geöffnet und kein Controller verhält sich anders.";
@@ -685,7 +685,7 @@
 "voice.language.french" = "Französisch";
 "voice.language.spanish" = "Spanisch";
 "voice.language.unavailable" = "%@ kann auf diesem iPad nicht erkannt werden, daher wurde für diesen Durchgang System verwendet.";
-"touchpad.title" = "Controller-Touchpad konfigurieren";
+"touchpad.title" = "Controller-Touchpad";
 "touchpad.intro" = "Schalten Sie dies nur ein, wenn das Touchpad eines verbundenen Controllers den Zeiger steuern soll. Ein Finger bewegt, zwei Finger scrollen und der physische Touchpad-Klick ist die Maustaste.";
 "touchpad.heading.pointer" = "Zeiger";
 "touchpad.enabled" = "Controller-Touchpad als Maus verwenden";

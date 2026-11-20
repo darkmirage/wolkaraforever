@@ -1339,6 +1339,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     frame.modalPresentationStyle=UIModalPresentationPageSheet;
     frame.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;
     frame.navigationBar.tintColor=WKGold();
+    // A phone's sheet is the system's card: full height, with the grabber that says it can be
+    // pulled down to close, as Settings' own sheets do.
+    if (self.traitCollection.horizontalSizeClass==UIUserInterfaceSizeClassCompact) {
+        frame.sheetPresentationController.detents=@[UISheetPresentationControllerDetent.largeDetent];
+        frame.sheetPresentationController.prefersGrabberVisible=YES;
+    }
     WKLog("ui", @"opening %@ over the home page", NSStringFromClass(page.class));
     WKPresentWhenFree(self, ^{ [self presentViewController:frame animated:YES completion:nil]; });
 }

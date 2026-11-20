@@ -636,7 +636,7 @@
 "addons.action.manage" = "Manage";
 "addons.manage.unmanaged" = "This existing add-on will be removed from this device.";
 /* ---- Voice and dictation ---- */
-"voice.title" = "Key / Controller Button Configuration";
+"voice.title" = "Push-to-Talk Button";
 "voice.test.title" = "Test Voice";
 "voice.test.open" = "Test Dictation";
 "voice.intro" = "Nothing here happens on its own. Until this is switched on and a button is set, the microphone is never opened and no controller behaves any differently.";
@@ -688,7 +688,7 @@
 "voice.language.french" = "French";
 "voice.language.spanish" = "Spanish";
 "voice.language.unavailable" = "%@ cannot be recognised on this iPad, so System was used for that hold.";
-"touchpad.title" = "Controller Touchpad Configuration";
+"touchpad.title" = "Controller Touchpad";
 "touchpad.intro" = "Turn this on only when you want a connected controller’s touchpad to control the pointer. One finger moves, two fingers scroll, and the physical touchpad click is the mouse button.";
 "touchpad.heading.pointer" = "Pointer";
 "touchpad.enabled" = "Use controller touchpad as mouse";

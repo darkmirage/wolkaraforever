@@ -1,4 +1,9 @@
 # Service native tracking during held mouse buttons and control editing.
+#
+# Rebased onto Tolkara edc3628: context only - upstream added per-process ivars to NSWindow.
+#
+diff --git a/translation/AppKit/AppKit.m b/translation/AppKit/AppKit.m
+index c450dcb..96c1fd9 100644
 --- a/translation/AppKit/AppKit.m
 +++ b/translation/AppKit/AppKit.m
 @@ -3,6 +3,7 @@
@@ -9,7 +14,7 @@
  #import "TouchGamepadLayout.h"
  
  // The guest screen's pixels per point, defined in Screens.m.
-@@ -283,6 +284,7 @@
+@@ -365,6 +366,7 @@ static BOOL AKWindowInputDiagnostics(void) {
  
  @interface AKHostView : UIView <UIPointerInteractionDelegate, AKTouchControlsDelegate>
  @property (nonatomic, weak) NSWindow *nsWindow;
@@ -17,23 +22,23 @@
  @end
  
  @implementation AKHostView { CGPoint _last; NSEventModifierFlags _mods; BOOL _pressedRight, _pressedLeft, _pointerInside, _softwareCursor; UIImageView *_cursorView; UIPointerInteraction *_pointer; UIPointerStyle *_gamePointerStyle; unsigned _hoverUpdates, _pointerUpdates, _cursorVisibilityReasons; NSTimeInterval _pointerReportTime; CGPoint _cursorHotSpot;
-@@ -295,6 +297,7 @@
-     NSInteger _touchClickCount;
-     CGSize _touchViewportSize;
+@@ -398,6 +400,7 @@ static BOOL AKWindowInputDiagnostics(void) {
+     BOOL _rawPointer, _rawCursorActive;
+     double _rawSpeed;
  }
 +- (BOOL)ak_needsTrackingEvents { return _touchControls.configuring || _touchControls.keyboardVisible || _pressedLeft || _pressedRight || _pressedMiddle; }
  - (instancetype)initWithFrame:(CGRect)f {
      if ((self = [super initWithFrame:f])) {
          self.multipleTouchEnabled = NO;
-@@ -803,6 +806,7 @@
+@@ -1125,6 +1128,7 @@ static void logLayer(CALayer *layer,unsigned depth) {
      for(CALayer *child in layer.sublayers) logLayer(child,depth+1);
  }
- @implementation NSWindow { UIWindow *_uiWindow; AKHostView *_host; NSRect _contentRect; NSResponder *_firstResponder; NSUInteger _collectionBehavior; }
+ @implementation NSWindow { UIWindow *_uiWindow; AKHostView *_host; NSRect _contentRect; NSResponder *_firstResponder; NSUInteger _collectionBehavior; id _backgroundColor; BOOL _opaque; size_t _processSlot; BOOL _processExited; }
 +- (BOOL)ak_needsTrackingEvents { return [_host ak_needsTrackingEvents]; }
  - (instancetype)initWithContentRect:(NSRect)r styleMask:(NSUInteger)m backing:(NSUInteger)b defer:(BOOL)d {
      static _Atomic NSInteger numbers;
-     if ((self = [super init])) { _contentRect = r; _styleMask=m; self.nextResponder = NSApp; _windowNumber = ++numbers; }
-@@ -1106,6 +1110,8 @@
+     if ((self = [super init])) { _contentRect = r; _styleMask=m; _opaque=YES; self.nextResponder = NSApp; _windowNumber = ++numbers;
+@@ -1569,6 +1573,8 @@ void AKGuestProcessDidExit(size_t slot) {
      if(diagnostics<3 && now>=nextDiagnostic && [NSProcessInfo.processInfo.arguments containsObject:@"--sample-native"]) {
          diagnostics++; nextDiagnostic=now+15; [self.keyWindow ak_logLayers];
      }
@@ -42,7 +47,7 @@
      for (BOOL pumped = NO;; pumped = YES) {
          for (NSUInteger i = 0; i < _queue.count; i++) {
              NSEvent *e = _queue[i];
-@@ -1126,20 +1132,19 @@
+@@ -1589,20 +1595,19 @@ void AKGuestProcessDidExit(size_t slot) {
          }
          NSTimeInterval left = date ? date.timeIntervalSinceNow : 0;
          if (pumped && left <= 0) return nil;

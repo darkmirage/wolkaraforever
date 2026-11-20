@@ -5,38 +5,50 @@
 # and invalidate it before forwarding that transition to the guest.
 #
 # Applies after: 0029-report-selected-guest-mode.patch
+#
+# Rebased onto Tolkara edc3628: the cache is also checked against displayBounds(), which
+# upstream's control columns change without a screen-mode notification, and the invalidation
+# sits inside upstream's AKEnterProcessCallback gate.
+#
 diff --git a/translation/CoreGraphics/Displays.m b/translation/CoreGraphics/Displays.m
+index 70a2f69..65dbdd8 100644
 --- a/translation/CoreGraphics/Displays.m
 +++ b/translation/CoreGraphics/Displays.m
-@@ -7,11 +7,11 @@ static CGFloat guestBackingScale(void) {
-     static CGFloat scale = -1.0;
-     if (scale >= 0.0) return scale;
-     scale = 1.0;
-     const char *environment = getenv("TOLKARA_BACKING_SCALE");
-     if (environment && *environment) scale = atof(environment);
-     else {
+@@ -14,7 +14,7 @@ static CGFloat guestBackingScale(void) {
          id stored = [NSUserDefaults.standardUserDefaults objectForKey:@"WolkaraForeverBackingScale"];
          if ([stored respondsToSelector:@selector(doubleValue)]) scale = [stored doubleValue];
      }
 -    return scale >= 1.0 && scale <= 3.0 ? scale : 1.0;
 +    return scale >= 0.5 && scale <= 3.0 ? scale : 1.0;
  }
-@@ -27,4 +27,10 @@ typedef uint32_t CGDirectDisplayID;
+ 
+ bool CGCursorIsVisible(void) { return !AKCursorIsHidden(); }
+@@ -32,8 +32,17 @@ static CGRect displayBounds(void) {
+ }
  typedef CFDictionaryRef CGDisplayModeRef;
  typedef void (*DisplayCallback)(CGDirectDisplayID, uint32_t, void *);
--static NSDictionary *mode(void) { UIScreen *s=UIScreen.mainScreen; CGFloat scale=guestBackingScale(); return @{@"width":@(s.bounds.size.width),@"height":@(s.bounds.size.height),@"pixelWidth":@(s.bounds.size.width*scale),@"pixelHeight":@(s.bounds.size.height*scale),@"refresh":@(s.maximumFramesPerSecond)}; }
+-// Whole pixels at the backing scale the guest is told (guestBackingScale).
+-static NSDictionary *mode(void) { UIScreen *s=UIScreen.mainScreen; CGSize b=displayBounds().size; CGFloat scale=guestBackingScale(); return @{@"width":@(b.width),@"height":@(b.height),@"pixelWidth":@(lround(b.width*scale)),@"pixelHeight":@(lround(b.height*scale)),@"refresh":@(s.maximumFramesPerSecond)}; }
 +static NSDictionary *displayMode;
++// Whole pixels at the backing scale the guest is told (guestBackingScale). The
++// game area also changes with the on-screen controls' columns, which UIKit does
++// not report as a screen-mode change, so the cache is checked against it.
 +static NSDictionary *mode(void) {
++    CGSize b=displayBounds().size;
 +    @synchronized(UIScreen.class) {
-+        if (!displayMode) { UIScreen *s=UIScreen.mainScreen; CGFloat scale=guestBackingScale(); displayMode=@{@"width":@(s.bounds.size.width),@"height":@(s.bounds.size.height),@"pixelWidth":@(s.bounds.size.width*scale),@"pixelHeight":@(s.bounds.size.height*scale),@"refresh":@(s.maximumFramesPerSecond)}; }
++        if (!displayMode || [displayMode[@"width"] doubleValue]!=b.width || [displayMode[@"height"] doubleValue]!=b.height) { UIScreen *s=UIScreen.mainScreen; CGFloat scale=guestBackingScale(); displayMode=@{@"width":@(b.width),@"height":@(b.height),@"pixelWidth":@(lround(b.width*scale)),@"pixelHeight":@(lround(b.height*scale)),@"refresh":@(s.maximumFramesPerSecond)}; }
 +        return displayMode;
 +    }
 +}
  CGDirectDisplayID CGMainDisplayID(void) { return 1; }
-@@ -76,5 +83,5 @@ CGError CGDisplayRegisterReconfigurationCallback(DisplayCallback callback,void *
-     if(!callback) return kCGErrorIllegalArgument;
+ CGError CGGetActiveDisplayList(uint32_t capacity,CGDirectDisplayID *displays,uint32_t *count) {
+     if (!count || (capacity && !displays)) return kCGErrorIllegalArgument;
+@@ -82,7 +91,7 @@ CGError CGDisplayRegisterReconfigurationCallback(DisplayCallback callback,void *
+     size_t processSlot=AKCallbackProcess((uintptr_t)callback);
      @synchronized(UIScreen.class) {
          if(!observers) observers=[NSMutableDictionary new]; NSString *key=callbackKey(callback,context);
--        if(!observers[key]) observers[key]=[NSNotificationCenter.defaultCenter addObserverForName:UIScreenModeDidChangeNotification object:UIScreen.mainScreen queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) { (void)n; callback(1,1<<4,context); }];
-+        if(!observers[key]) observers[key]=[NSNotificationCenter.defaultCenter addObserverForName:UIScreenModeDidChangeNotification object:UIScreen.mainScreen queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) { (void)n; @synchronized(UIScreen.class) { displayMode=nil; } callback(1,1<<4,context); }];
+-        if(!observers[key]) observers[key]=[NSNotificationCenter.defaultCenter addObserverForName:UIScreenModeDidChangeNotification object:UIScreen.mainScreen queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) { (void)n; if (AKEnterProcessCallback(processSlot)) { callback(1,1<<4,context); AKLeaveProcessCallback(processSlot); } }];
++        if(!observers[key]) observers[key]=[NSNotificationCenter.defaultCenter addObserverForName:UIScreenModeDidChangeNotification object:UIScreen.mainScreen queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) { (void)n; @synchronized(UIScreen.class) { displayMode=nil; } if (AKEnterProcessCallback(processSlot)) { callback(1,1<<4,context); AKLeaveProcessCallback(processSlot); } }];
      }
+     return kCGErrorSuccess;
+ }

@@ -2,8 +2,8 @@
 #import "AKSupport.h"
 #import "AKHostLocalization.h"
 #import "InterfaceMode.h"
-#import "TouchTrackpad.h"
-#import "TouchCamera.h"
+#import "LayerTrackpad.h"
+#import "TouchCameraGesture.h"
 #import "ControllerPointer.h"
 #import "TouchControllerLog.h"
 #import "TouchGamepadLayout.h"
@@ -62,6 +62,17 @@ NSNotificationName const AKTouchDictationToggleNotification = @"AKTouchDictation
 // The keys the launcher's and the platform's switches read. The trackpad string
 // is the one the platform already stored, so an existing choice carries over.
 NSString *const AKTouchControlsDefaultsKey = @"AKTouchControls";
+NSString *const AKPointerAccelerationDefaultsKey = @"AKPointerAcceleration";
+NSString *const AKPointerSpeedDefaultsKey = @"AKPointerSpeed";
+BOOL AKPointerAccelerationEnabled(void) {
+    NSNumber *saved = [NSUserDefaults.standardUserDefaults objectForKey:AKPointerAccelerationDefaultsKey];
+    return ![saved isKindOfClass:NSNumber.class] || saved.boolValue;
+}
+double AKPointerSpeed(void) {
+    NSNumber *saved = [NSUserDefaults.standardUserDefaults objectForKey:AKPointerSpeedDefaultsKey];
+    double speed = [saved isKindOfClass:NSNumber.class] ? saved.doubleValue : 1;
+    return isfinite(speed) && speed >= 0.1 && speed <= 10 ? speed : 1;
+}
 
 // The saved game password. See TouchControls.h, and WoW/BattleNetSavedPassword.h for the split:
 // the launcher owns the Keychain item and the setting, this file owns the key and asks.
@@ -658,13 +669,13 @@ static NSString *AKKeyAccessibilityNameKey(NSString *title) {
     return [saved isKindOfClass:NSNumber.class] ? saved.boolValue : YES;
 }
 
-static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double y, unsigned button) {
+static void AKEmitTouch(void *context, AKLayerTrackpadAction action, double x, double y, unsigned button) {
     AKTouchControls *controls = (__bridge AKTouchControls *)context;
     switch (action) {
-        case AKTrackpadMove: [controls.delegate touchMoveBy:CGPointMake(x, y)]; break;
-        case AKTrackpadScroll: [controls.delegate touchScrollBy:CGPointMake(x, y)]; break;
-        case AKTrackpadDown: [controls.delegate touchButton:button pressed:YES]; break;
-        case AKTrackpadUp: [controls.delegate touchButton:button pressed:NO]; break;
+        case AKLayerTrackpadMove: [controls.delegate touchMoveBy:CGPointMake(x, y)]; break;
+        case AKLayerTrackpadScroll: [controls.delegate touchScrollBy:CGPointMake(x, y)]; break;
+        case AKLayerTrackpadDown: [controls.delegate touchButton:button pressed:YES]; break;
+        case AKLayerTrackpadUp: [controls.delegate touchButton:button pressed:NO]; break;
     }
 }
 
@@ -2167,7 +2178,7 @@ static const unsigned short AKKeyF12 = 111;
         center.x += point.x; center.y += point.y; count++;
     }
     if (count) { center.x /= count; center.y /= count; }
-    AKTouchCameraUpdate(&_camera, count, center.x, center.y, event.timestamp,
+    AKTouchCameraGestureUpdate(&_camera, count, center.x, center.y, event.timestamp,
                         self.superview.bounds.size, AKEmitTouch, (__bridge void *)self);
     [_holdTimer invalidate]; _holdTimer = nil;
     if (_camera.pad.fingers && !_camera.pad.blocked && !_camera.pad.lifting && !_camera.pad.dragging &&

@@ -18,13 +18,19 @@
 # Applies to: translation/AppKit/AppKit.m.
 # Upstream: candidate (as a platform capability, once a cross-platform reason exists).
 #
+# Rebased onto Tolkara edc3628: upstream added a raw-pointer path (rawPointerOwns:, indirect
+# touches only), camera-drag bookkeeping and a hover move before a finger's press. The
+# direct-gesture branch runs after rawPointerOwns: and before upstream's finger hover, which
+# it already does itself.
+#
+diff --git a/translation/AppKit/AppKit.m b/translation/AppKit/AppKit.m
+index 6528428..eac24d5 100644
 --- a/translation/AppKit/AppKit.m
 +++ b/translation/AppKit/AppKit.m
-@@ -286,6 +286,15 @@
- @property (nonatomic, weak) NSWindow *nsWindow;
+@@ -369,6 +369,15 @@ static BOOL AKWindowInputDiagnostics(void) {
  - (BOOL)ak_needsTrackingEvents;
  @end
-+
+ 
 +// The interface the user chose: "ios" is the mobile (iPhone/Duo) arrangement, anything
 +// else - including a missing or hand-edited value - is iPadOS, the interface every release
 +// through v1.0.7 has had. Read on each use, so a value written between two guests in one
@@ -33,13 +39,14 @@
 +    id value = [NSUserDefaults.standardUserDefaults objectForKey:@"WolkaraForeverInterfaceModeV1"];
 +    return [value isKindOfClass:NSString.class] && [(NSString *)value isEqualToString:@"ios"];
 +}
- 
++
  @implementation AKHostView { CGPoint _last; NSEventModifierFlags _mods; BOOL _pressedRight, _pressedLeft, _pointerInside, _softwareCursor; UIImageView *_cursorView; UIPointerInteraction *_pointer; UIPointerStyle *_gamePointerStyle; unsigned _hoverUpdates, _pointerUpdates, _cursorVisibilityReasons; NSTimeInterval _pointerReportTime; CGPoint _cursorHotSpot;
      AKTouchControls *_touchControls;
-@@ -296,11 +305,33 @@
-     unsigned _lastTouchButton;
-     NSInteger _touchClickCount;
-     CGSize _touchViewportSize;
+     AKPerformanceOverlay *_performanceOverlay;
+@@ -399,11 +408,33 @@ static BOOL AKWindowInputDiagnostics(void) {
+     // iPadOS pointer drives the game as before.
+     BOOL _rawPointer, _rawCursorActive;
+     double _rawSpeed;
 +    // Direct touch (trackpad off): where the finger came down, whether the gesture is still
 +    // undecided between a tap, a hold and a drag, whether a hold already right-clicked, and
 +    // the hold's timer.
@@ -71,7 +78,7 @@
          // Before the first pointer event the cursor rests mid-window, as a
          // Mac's would somewhere on screen: not in a corner, where a game that
          // polls the position would hover whatever sits there.
-@@ -375,7 +406,11 @@
+@@ -578,7 +609,11 @@ static BOOL AKWindowInputDiagnostics(void) {
      }
  }
  - (void)touchTrackpadChanged:(BOOL)enabled {
@@ -84,11 +91,10 @@
      if (enabled && !_touchCursorInitialized && self.bounds.size.width > 0 && self.bounds.size.height > 0) {
          _last = CGPointMake(CGRectGetMidX(self.bounds), CGRectGetMidY(self.bounds));
          self.nsWindow.ak_mouseLocation = CGPointMake(_last.x, self.bounds.size.height - _last.y);
-@@ -634,26 +669,157 @@
-         return YES;
-     }
-     return NO;
-+}
+@@ -948,10 +983,87 @@ static BOOL AKIsRight(UIEvent *ev) { return (ev.buttonMask & UIEventButtonMaskSe
+ - (BOOL)rawPointerOwns:(NSSet<UITouch *> *)touches {
+     return AKTouchesAreIndirect(touches) && [self rawPointerActive];
+ }
 +// Direct touch, with the trackpad off. A quick tap is a left click where the finger is. A
 +// finger held still for a moment is a right click there, with a tap of haptics so the hold
 +// is felt; sliding after that is a right drag, which turns the character. A finger that
@@ -145,10 +151,11 @@
 +        _pinchCarry -= direction * AKPinchNotch;
 +        [self postScrollNotch:direction];
 +    }
- }
++}
 +- (BOOL)directGestureActive { return _directTouch != nil || _directMulti; }
  - (void)touchesBegan:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
      if ([self handleTrackpadTouches:t event:ev]) return;
+     if ([self rawPointerOwns:t]) return;
 -    BOOL r = AKIsRight(ev);if(r?_pressedRight:_pressedLeft)return; _last = [t.anyObject locationInView:self];
 +    BOOL r = AKIsRight(ev);
 +    if (!r && AKMobileInterface() && AKIsFinger(t) && ![self usesRelativeMouse]) {
@@ -171,8 +178,9 @@
 +    }
 +    if(r?_pressedRight:_pressedLeft)return; _last = [t.anyObject locationInView:self];
      [self reconcileModifiers:AKMods(ev.modifierFlags)];
-     [self postMouse:r ? NSEventTypeRightMouseDown : NSEventTypeLeftMouseDown at:_last button:r];
- }
+     // A finger's pointer arrives where it landed before the button goes down.
+     // A game's hover state follows mouse-moved events (World of Warcraft's
+@@ -965,17 +1077,71 @@ static BOOL AKIsRight(UIEvent *ev) { return (ev.buttonMask & UIEventButtonMaskSe
  - (void)touchesMoved:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
      if ([self handleTrackpadTouches:t event:ev]) return;
      if([self usesRelativeMouse])return;
@@ -204,6 +212,7 @@
 +}
  - (void)touchesEnded:(NSSet<UITouch *> *)t withEvent:(UIEvent *)ev {
      if ([self handleTrackpadTouches:t event:ev]) return;
+     if ([self rawPointerOwns:t]) return;
 +    if ([self directGestureActive]) {
 +        if (!_directMulti && [t containsObject:_directTouch]) {
 +            [self cancelDirectHold];

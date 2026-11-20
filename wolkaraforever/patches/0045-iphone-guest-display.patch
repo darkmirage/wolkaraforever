@@ -1,24 +1,134 @@
 # WolkaraForever layer patch 0045: shared guest scale and window-sized virtual display.
 # Preserve logical coordinates and guest-owned drawable sizing; publish folds/resizes.
+#
+# Rebased onto Tolkara edc3628: upstream added AKScreenGameSize/AKScreenSetGameSize (the
+# game area less touch-control columns), AKBackingScale and per-process callback gating
+# (AKEnterProcessCallback). The published window geometry wins when there is one, then
+# upstream's game size, then the screen; display callbacks stay inside upstream's gate; the
+# declarations join upstream's existing __OBJC__ block; upstream's CGDisplayPixelsWide
+# assertion in tests/test_displays.m now expects the configured scale.
+#
+diff --git a/tests/test_appkit_views.m b/tests/test_appkit_views.m
+index 74e4b95..855f949 100644
+--- a/tests/test_appkit_views.m
++++ b/tests/test_appkit_views.m
+@@ -12,6 +12,10 @@ extern void AKSetWindowProcess(NSWindow *window,size_t slot);
+ @interface NSWindow (OrderingTest)
+ - (void)ak_order:(NSInteger)mode relativeTo:(NSInteger)number;
+ @end
++@interface NSScreen (FixtureBackingCoordinates)
++- (CGRect)convertRectToBacking:(CGRect)rect;
++- (CGRect)convertRectFromBacking:(CGRect)rect;
++@end
+ 
+ // Draws by updating its layer, as Wine's Mac driver does.
+ @interface LayerView : NSView
+@@ -799,5 +803,20 @@ int main(void) { @autoreleasepool {
+     gameView.layer = thirdLayer;
+     assert(thirdLayer.superlayer == gameHost.layer);
+     assert(thirdLayer.sublayers.count == 2 && thirdLayer.sublayers[0] == belowLayer && thirdLayer.sublayers[1] == above.layer);
++    // Logical coordinates stay in points at every phone size and backing scale.
++    const CGSize phoneSizes[]={ {852,393},{956,440},{678,466},{951,669},{669,951} };
++    for (NSUInteger i=0;i<sizeof(phoneSizes)/sizeof(phoneSizes[0]);i++) {
++        AKSetGuestDisplayGeometry(phoneSizes[i],120);
++        NSScreen *screen=NSScreen.mainScreen;
++        assert(CGSizeEqualToSize(screen.frame.size,phoneSizes[i]));
++        assert(screen.backingScaleFactor==other.backingScaleFactor);
++        CGRect points=CGRectMake(12,24,100,60);
++        CGRect pixels=[screen convertRectToBacking:points];
++        assert(pixels.size.width==100*other.backingScaleFactor);
++        assert(CGRectEqualToRect([screen convertRectFromBacking:pixels],points));
++        [other ak_hostBoundsChanged:(CGRect){CGPointZero,phoneSizes[i]}];
++        assert(CGSizeEqualToSize(plain.frame.size,phoneSizes[i]));
++        assert(plain.layer.contentsScale==screen.backingScaleFactor);
++    }
+     puts("display pass, frame rects, panels, tracking areas, layer placement, layer replacement, contents scale, window ordering, Quartz events, window numbers and modifier keys: PASS");
+ } }
+diff --git a/tests/test_displays.m b/tests/test_displays.m
+index 825437d..9ad0062 100644
+--- a/tests/test_displays.m
++++ b/tests/test_displays.m
+@@ -25,6 +25,12 @@ static unsigned retiredCalls, liveCalls;
+ static void retiredCallback(uint32_t display,uint32_t flags,void *context) { (void)display;(void)flags;(void)context; retiredCalls++; }
+ static void liveCallback(uint32_t display,uint32_t flags,void *context) { (void)display;(void)flags;(void)context; liveCalls++; }
+ static size_t callbackOwner(uintptr_t address) { return address==(uintptr_t)retiredCallback ? 1 : 2; }
++static unsigned changes;
++static void DisplayChanged(uint32_t display,uint32_t flags,void *context) {
++    assert(display==1 && (flags&(1<<4)) && context==&changes);
++    CGDisplayModeRef mode=CGDisplayCopyDisplayMode(1); // callback can safely reenter
++    assert(mode); CGDisplayModeRelease(mode); changes++;
++}
+ int main(void) { @autoreleasepool {
+     CGDirectDisplayID displays[2]={0}; uint32_t count=0;
+     assert(CGGetOnlineDisplayList(2,displays,&count)==kCGErrorSuccess && count==1 && displays[0]==1);
+@@ -44,8 +50,10 @@ int main(void) { @autoreleasepool {
+     assert(AKBackingScale(2, 2048.0 / 1192.0) == 2 && AKBackingScale(3, 2.608) == 3 && AKBackingScale(2, 2.34) == 2);
+     assert(AKBackingScale(0, 0) == 1);
+     extern size_t CGDisplayPixelsWide(CGDirectDisplayID), CGDisplayPixelsHigh(CGDirectDisplayID);
+-    double whole = AKBackingScale(UIScreen.mainScreen.scale, UIScreen.mainScreen.nativeScale);
+-    assert(CGDisplayPixelsWide(1) == (size_t)lround(points.width * whole) && CGDisplayPixelsHigh(1) == (size_t)lround(points.height * whole));
++    // The mode's pixels follow the scale the guest is told, which is the
++    // configured one (AKConfiguredGuestBackingScale), not the panel's.
++    double told = AKConfiguredGuestBackingScale();
++    assert(CGDisplayPixelsWide(1) == (size_t)lround(points.width * told) && CGDisplayPixelsHigh(1) == (size_t)lround(points.height * told));
+     // The screen's own mode is the only one to set.
+     CGDisplayModeRef mode=CGDisplayCopyDisplayMode(1); assert(mode && CGDisplayModeIsUsableForDesktopGUI(mode));
+     assert(CGDisplayModeRetain(mode)==mode); CGDisplayModeRelease(mode);
+@@ -64,5 +72,33 @@ int main(void) { @autoreleasepool {
+     assert(retiredCalls==1 && liveCalls==2 && AKProcessCallbacksDrained(1));
+     assert(!CGDisplayRemoveReconfigurationCallback(retiredCallback,NULL));
+     assert(!CGDisplayRemoveReconfigurationCallback(liveCallback,NULL));
++    // Pro, Pro Max, and both observed Duo viewports; then rotate and unfold.
++    const CGSize viewports[]={ {852,393},{956,440},{678,466},{951,669},{669,951} };
++    CGFloat scale=AKConfiguredGuestBackingScale();
++    const char *raw=getenv("TOLKARA_BACKING_SCALE");
++    CGFloat requested=raw?atof(raw):1;
++    CGFloat expected=isfinite(requested) && requested>=0.5 && requested<=3 ? requested : 1;
++    assert(scale==expected && AKConfiguredGuestBackingScale()==expected);
++    assert(CGDisplayRegisterReconfigurationCallback(DisplayChanged,&changes)==kCGErrorSuccess);
++    for (NSUInteger i=0;i<sizeof(viewports)/sizeof(viewports[0]);i++) {
++        CGDisplayModeRef before=CGDisplayCopyDisplayMode(1);
++        AKSetGuestDisplayGeometry(viewports[i],120);
++        CGDisplayModeRef after=CGDisplayCopyDisplayMode(1);
++        NSDictionary *m=(__bridge NSDictionary *)after;
++        assert([m[@"width"] doubleValue]==viewports[i].width);
++        assert([m[@"height"] doubleValue]==viewports[i].height);
++        assert([m[@"pixelWidth"] doubleValue]==round(viewports[i].width*scale));
++        assert([m[@"pixelHeight"] doubleValue]==round(viewports[i].height*scale));
++        assert(CGDisplaySetDisplayMode(1,after,NULL)==kCGErrorSuccess);
++        assert(CGDisplaySetDisplayMode(1,before,NULL)==kCGErrorIllegalArgument);
++        CGDisplayModeRelease(before); CGDisplayModeRelease(after);
++    }
++    assert(changes==5);
++    AKSetGuestDisplayGeometry(viewports[4],120);
++    assert(changes==5); // unchanged layouts do not flood guest callbacks
++    assert(CGDisplayRemoveReconfigurationCallback(DisplayChanged,&changes)==kCGErrorSuccess);
++    AKSetGuestDisplayGeometry(CGSizeMake(NAN,0),120);
++    CGSize retained; assert(AKGetGuestDisplayGeometry(&retained,NULL));
++    assert(CGSizeEqualToSize(retained,viewports[4]));
+     puts("online displays, physical size, OpenGL masks, capture and display modes: PASS");
+ } }
+diff --git a/translation/AKSupport/AKSupport.h b/translation/AKSupport/AKSupport.h
+index eb0dc97..762b4aa 100644
 --- a/translation/AKSupport/AKSupport.h
 +++ b/translation/AKSupport/AKSupport.h
-@@ -35,3 +35,11 @@
- bool AKMouseIsCaptured(void);
- void AKMouseSetCaptured(bool captured);
- void AKMouseSetConfined(bool confined);
-+
-+#ifdef __OBJC__
+@@ -66,4 +66,9 @@ bool AKProcessCallbacksDrained(size_t slot);
+ // captured guest objects cannot run destructors after private memory retires.
+ void AKDispatchProcessBlock(size_t slot, unsigned mode, dispatch_queue_t queue,
+                             dispatch_time_t when, dispatch_block_t block);
 +// A shared virtual display for every adapter. Geometry is published by the host
 +// window on the main thread; readers never synchronously hop onto that thread.
 +CGFloat AKConfiguredGuestBackingScale(void);
 +BOOL AKGetGuestDisplayGeometry(CGSize *size, double *refresh);
 +void AKSetGuestDisplayGeometry(CGSize size, double refresh);
-+#endif
+ #endif
+diff --git a/translation/AKSupport/AKSupport.m b/translation/AKSupport/AKSupport.m
+index 677bcc8..dd9247a 100644
 --- a/translation/AKSupport/AKSupport.m
 +++ b/translation/AKSupport/AKSupport.m
-@@ -64,3 +64,40 @@
-     if(atomic_exchange(&mouseConfined,confined)!=confined)
-         [NSNotificationCenter.defaultCenter postNotificationName:@"AKMouseCaptureDidChange" object:nil];
+@@ -161,3 +161,40 @@ void AKDispatchProcessBlock(size_t slot, unsigned mode, dispatch_queue_t queue,
+     else if (mode==2) dispatch_after(when,queue,invoke);
+     else dispatch_async(queue,invoke);
  }
 +
 +// Keep AppKit and CoreGraphics on exactly the same scale, including fractional
@@ -57,9 +167,26 @@
 +    // Publish after releasing the lock: guest callbacks may query the new mode.
 +    if (changed) [NSNotificationCenter.defaultCenter postNotificationName:@"AKGuestDisplayDidChange" object:nil];
 +}
+diff --git a/translation/AppKit/AppKit.m b/translation/AppKit/AppKit.m
+index 79427a3..3d6ed0f 100644
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -1268,8 +1268,9 @@ static void logLayer(CALayer *layer,unsigned depth) {
+         layer.contentsScale = scale;
+     BOOL resized = !CGSizeEqualToSize(_contentView.frame.size, b.size);
+     _contentView.frame = b;
++    if (_host.window) AKSetGuestDisplayGeometry(b.size,_host.window.windowScene.screen.maximumFramesPerSecond);
+     if (resized) {
+-        AKLog(@"window content size -> %.0fx%.0f @%.0fx", b.size.width, b.size.height, self.backingScaleFactor);
++        AKLog(@"window content size -> %.0fx%.0f @%.2fx", b.size.width, b.size.height, self.backingScaleFactor);
+         if ([_delegate respondsToSelector:@selector(windowDidResize:)])
+             [_delegate performSelector:@selector(windowDidResize:) withObject:[NSNotification notificationWithName:@"NSWindowDidResizeNotification" object:self]];
+         [NSNotificationCenter.defaultCenter postNotificationName:@"NSWindowDidResizeNotification" object:self];
+diff --git a/translation/AppKit/Screens.m b/translation/AppKit/Screens.m
+index 7bb3593..eb1d2f1 100644
 --- a/translation/AppKit/Screens.m
 +++ b/translation/AppKit/Screens.m
-@@ -1,39 +1,14 @@
+@@ -1,41 +1,15 @@
  #import "AppKit.h"
 -#include <stdlib.h>
 -// How many pixels the guest is told it has per point.
@@ -97,14 +224,18 @@
  @implementation NSScreen
  + (NSScreen *)mainScreen { static NSScreen *s; static dispatch_once_t once; dispatch_once(&once, ^{s=[self new];}); return s; }
  + (NSArray *)screens { return @[self.mainScreen]; }
--- (NSRect)frame { return UIScreen.mainScreen.bounds; }
-+- (NSRect)frame {
+-// The area the guest's windows get: the screen less the on-screen controls'
+-// side columns, where they take them.
++// The area the guest's windows get: the host window's published geometry, or
++// before there is one the screen less the on-screen controls' side columns.
+ - (NSRect)frame {
 +    CGSize size;
-+    return AKGetGuestDisplayGeometry(&size,NULL) ? (CGRect){CGPointZero,size} : UIScreen.mainScreen.bounds;
-+}
- - (NSRect)auxiliaryTopLeftArea { return CGRectZero; }
- - (NSRect)auxiliaryTopRightArea { return CGRectZero; }
- - (NSRect)convertRectFromBacking:(NSRect)r { CGFloat f=self.backingScaleFactor; return CGRectMake(r.origin.x/f,r.origin.y/f,r.size.width/f,r.size.height/f); }
++    if (AKGetGuestDisplayGeometry(&size,NULL)) return (CGRect){CGPointZero,size};
+     double width, height;
+     return AKScreenGameSize(&width, &height) ? CGRectMake(0, 0, width, height) : UIScreen.mainScreen.bounds;
+ }
+diff --git a/translation/CoreGraphics/Displays.m b/translation/CoreGraphics/Displays.m
+index 65dbdd8..bb99c25 100644
 --- a/translation/CoreGraphics/Displays.m
 +++ b/translation/CoreGraphics/Displays.m
 @@ -2,21 +2,6 @@
@@ -129,26 +260,38 @@
  bool CGCursorIsVisible(void) { return !AKCursorIsHidden(); }
  CGError CGAssociateMouseAndMouseCursorPosition(boolean_t connected) { AKMouseSetCaptured(!connected); return kCGErrorSuccess; }
  CGError CGWarpMouseCursorPosition(CGPoint point) {
-@@ -28,9 +13,26 @@
+@@ -25,21 +10,33 @@ CGError CGWarpMouseCursorPosition(CGPoint point) {
+     return kCGErrorSuccess;
+ }
+ typedef uint32_t CGDirectDisplayID;
+-// The guest's display: the game area when the on-screen controls take side columns.
++// The guest's display: the host window's published geometry, or before there is
++// one the game area when the on-screen controls take side columns.
+ static CGRect displayBounds(void) {
++    CGSize size;
++    if (AKGetGuestDisplayGeometry(&size,NULL)) return (CGRect){CGPointZero,size};
+     double width, height;
+     return AKScreenGameSize(&width, &height) ? CGRectMake(0, 0, width, height) : UIScreen.mainScreen.bounds;
+ }
  typedef CFDictionaryRef CGDisplayModeRef;
  typedef void (*DisplayCallback)(CGDirectDisplayID, uint32_t, void *);
  static NSDictionary *displayMode;
-+static CGRect guestDisplayBounds(void) {
-+    CGSize size;
-+    return AKGetGuestDisplayGeometry(&size,NULL) ? (CGRect){CGPointZero,size} : UIScreen.mainScreen.bounds;
-+}
+-// Whole pixels at the backing scale the guest is told (guestBackingScale). The
+-// game area also changes with the on-screen controls' columns, which UIKit does
+-// not report as a screen-mode change, so the cache is checked against it.
  static NSDictionary *mode(void) {
+-    CGSize b=displayBounds().size;
 +    CGSize size; double refresh;
 +    if (!AKGetGuestDisplayGeometry(&size,&refresh)) {
-+        UIScreen *screen=UIScreen.mainScreen;
-+        size=screen.bounds.size; refresh=screen.maximumFramesPerSecond;
++        size=displayBounds().size; refresh=UIScreen.mainScreen.maximumFramesPerSecond;
 +    }
 +    CGFloat scale=AKConfiguredGuestBackingScale();
      @synchronized(UIScreen.class) {
--        if (!displayMode) { UIScreen *s=UIScreen.mainScreen; CGFloat scale=guestBackingScale(); displayMode=@{@"width":@(s.bounds.size.width),@"height":@(s.bounds.size.height),@"pixelWidth":@(s.bounds.size.width*scale),@"pixelHeight":@(s.bounds.size.height*scale),@"refresh":@(s.maximumFramesPerSecond)}; }
-+        // A fold, rotation or window resize need not send UIScreenModeDidChange.
-+        // Validate the cache against current geometry on every query. Retained
-+        // old dictionaries remain immutable snapshots, as CGDisplayMode requires.
+-        if (!displayMode || [displayMode[@"width"] doubleValue]!=b.width || [displayMode[@"height"] doubleValue]!=b.height) { UIScreen *s=UIScreen.mainScreen; CGFloat scale=guestBackingScale(); displayMode=@{@"width":@(b.width),@"height":@(b.height),@"pixelWidth":@(lround(b.width*scale)),@"pixelHeight":@(lround(b.height*scale)),@"refresh":@(s.maximumFramesPerSecond)}; }
++        // A fold, rotation, window resize or the on-screen controls' columns need
++        // not send UIScreenModeDidChange. Validate the cache against current
++        // geometry on every query. Retained old dictionaries remain immutable
++        // snapshots, as CGDisplayMode requires.
 +        if (!displayMode || [displayMode[@"width"] doubleValue]!=size.width
 +            || [displayMode[@"height"] doubleValue]!=size.height
 +            || [displayMode[@"refresh"] doubleValue]!=refresh)
@@ -157,32 +300,18 @@
          return displayMode;
      }
  }
-@@ -41,11 +43,11 @@
- }
- // Every display there is is online, and there is one.
- CGError CGGetOnlineDisplayList(uint32_t capacity,CGDirectDisplayID *displays,uint32_t *count) { return CGGetActiveDisplayList(capacity,displays,count); }
--CGRect CGDisplayBounds(CGDirectDisplayID d) { return d==1 ? UIScreen.mainScreen.bounds : CGRectZero; }
-+CGRect CGDisplayBounds(CGDirectDisplayID d) { return d==1 ? guestDisplayBounds() : CGRectZero; }
- // In millimetres, at the 132 points per inch of an iPad's screen.
- CGSize CGDisplayScreenSize(CGDirectDisplayID d) {
-     if(d!=1) return CGSizeZero;
--    CGSize points=UIScreen.mainScreen.bounds.size;
-+    CGSize points=guestDisplayBounds().size;
-     return CGSizeMake(points.width*25.4/132.0,points.height*25.4/132.0);
- }
- double CGDisplayRotation(CGDirectDisplayID d) { (void)d; return 0; }
-@@ -81,11 +83,20 @@
-     if(!callback) return kCGErrorIllegalArgument;
+@@ -91,11 +88,20 @@ CGError CGDisplayRegisterReconfigurationCallback(DisplayCallback callback,void *
+     size_t processSlot=AKCallbackProcess((uintptr_t)callback);
      @synchronized(UIScreen.class) {
          if(!observers) observers=[NSMutableDictionary new]; NSString *key=callbackKey(callback,context);
--        if(!observers[key]) observers[key]=[NSNotificationCenter.defaultCenter addObserverForName:UIScreenModeDidChangeNotification object:UIScreen.mainScreen queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) { (void)n; @synchronized(UIScreen.class) { displayMode=nil; } callback(1,1<<4,context); }];
+-        if(!observers[key]) observers[key]=[NSNotificationCenter.defaultCenter addObserverForName:UIScreenModeDidChangeNotification object:UIScreen.mainScreen queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) { (void)n; @synchronized(UIScreen.class) { displayMode=nil; } if (AKEnterProcessCallback(processSlot)) { callback(1,1<<4,context); AKLeaveProcessCallback(processSlot); } }];
 +        if (!observers[key]) {
 +            NSMutableArray *tokens=[NSMutableArray new];
 +            for (NSString *name in @[UIScreenModeDidChangeNotification,@"AKGuestDisplayDidChange"])
 +                [tokens addObject:[NSNotificationCenter.defaultCenter addObserverForName:name object:nil
 +                    queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *n) {
 +                    @synchronized(UIScreen.class) { displayMode=nil; }
-+                    callback(1,(1<<4)|(1<<12),context);
++                    if (AKEnterProcessCallback(processSlot)) { callback(1,(1<<4)|(1<<12),context); AKLeaveProcessCallback(processSlot); }
 +                }]];
 +            observers[key]=tokens;
 +        }
@@ -194,109 +323,3 @@
 +    @synchronized(UIScreen.class) { NSString *key=callbackKey(callback,context); NSArray *tokens=observers[key]; for (id token in tokens) [NSNotificationCenter.defaultCenter removeObserver:token]; [observers removeObjectForKey:key]; }
      return kCGErrorSuccess;
  }
---- a/translation/AppKit/AppKit.m
-+++ b/translation/AppKit/AppKit.m
-@@ -895,8 +895,9 @@
-         layer.contentsScale = scale;
-     BOOL resized = !CGSizeEqualToSize(_contentView.frame.size, b.size);
-     _contentView.frame = b;
-+    if (_host.window) AKSetGuestDisplayGeometry(b.size,_host.window.windowScene.screen.maximumFramesPerSecond);
-     if (resized) {
--        AKLog(@"window content size -> %.0fx%.0f @%.0fx", b.size.width, b.size.height, self.backingScaleFactor);
-+        AKLog(@"window content size -> %.0fx%.0f @%.2fx", b.size.width, b.size.height, self.backingScaleFactor);
-         if ([_delegate respondsToSelector:@selector(windowDidResize:)])
-             [_delegate performSelector:@selector(windowDidResize:) withObject:[NSNotification notificationWithName:@"NSWindowDidResizeNotification" object:self]];
-         [NSNotificationCenter.defaultCenter postNotificationName:@"NSWindowDidResizeNotification" object:self];
---- a/tests/test_displays.m
-+++ b/tests/test_displays.m
-@@ -3,6 +3,7 @@
- #import <UIKit/UIKit.h>
- #import <Metal/Metal.h>
- #include <assert.h>
-+#import "AKSupport.h"
- typedef uint32_t CGDirectDisplayID;
- typedef CFDictionaryRef CGDisplayModeRef;
- extern CGError CGGetOnlineDisplayList(uint32_t, CGDirectDisplayID *, uint32_t *);
-@@ -17,6 +18,14 @@
- extern void CGDisplayModeRelease(CGDisplayModeRef);
- extern bool CGDisplayModeIsUsableForDesktopGUI(CGDisplayModeRef);
- extern CGError CGDisplaySetDisplayMode(CGDirectDisplayID, CGDisplayModeRef, CFDictionaryRef);
-+extern CGError CGDisplayRegisterReconfigurationCallback(void (*)(uint32_t,uint32_t,void *),void *);
-+extern CGError CGDisplayRemoveReconfigurationCallback(void (*)(uint32_t,uint32_t,void *),void *);
-+static unsigned changes;
-+static void DisplayChanged(uint32_t display,uint32_t flags,void *context) {
-+    assert(display==1 && (flags&(1<<4)) && context==&changes);
-+    CGDisplayModeRef mode=CGDisplayCopyDisplayMode(1); // callback can safely reenter
-+    assert(mode); CGDisplayModeRelease(mode); changes++;
-+}
- int main(void) { @autoreleasepool {
-     CGDirectDisplayID displays[2]={0}; uint32_t count=0;
-     assert(CGGetOnlineDisplayList(2,displays,&count)==kCGErrorSuccess && count==1 && displays[0]==1);
-@@ -37,5 +46,33 @@
-     assert(CGDisplaySetDisplayMode(1,(__bridge CGDisplayModeRef)other,NULL)==kCGErrorIllegalArgument);
-     assert(CGDisplaySetDisplayMode(2,mode,NULL)==kCGErrorIllegalArgument && CGDisplaySetDisplayMode(1,NULL,NULL)==kCGErrorIllegalArgument);
-     CGDisplayModeRelease(mode);
-+    // Pro, Pro Max, and both observed Duo viewports; then rotate and unfold.
-+    const CGSize viewports[]={ {852,393},{956,440},{678,466},{951,669},{669,951} };
-+    CGFloat scale=AKConfiguredGuestBackingScale();
-+    const char *raw=getenv("TOLKARA_BACKING_SCALE");
-+    CGFloat requested=raw?atof(raw):1;
-+    CGFloat expected=isfinite(requested) && requested>=0.5 && requested<=3 ? requested : 1;
-+    assert(scale==expected && AKConfiguredGuestBackingScale()==expected);
-+    assert(CGDisplayRegisterReconfigurationCallback(DisplayChanged,&changes)==kCGErrorSuccess);
-+    for (NSUInteger i=0;i<sizeof(viewports)/sizeof(viewports[0]);i++) {
-+        CGDisplayModeRef before=CGDisplayCopyDisplayMode(1);
-+        AKSetGuestDisplayGeometry(viewports[i],120);
-+        CGDisplayModeRef after=CGDisplayCopyDisplayMode(1);
-+        NSDictionary *m=(__bridge NSDictionary *)after;
-+        assert([m[@"width"] doubleValue]==viewports[i].width);
-+        assert([m[@"height"] doubleValue]==viewports[i].height);
-+        assert([m[@"pixelWidth"] doubleValue]==round(viewports[i].width*scale));
-+        assert([m[@"pixelHeight"] doubleValue]==round(viewports[i].height*scale));
-+        assert(CGDisplaySetDisplayMode(1,after,NULL)==kCGErrorSuccess);
-+        assert(CGDisplaySetDisplayMode(1,before,NULL)==kCGErrorIllegalArgument);
-+        CGDisplayModeRelease(before); CGDisplayModeRelease(after);
-+    }
-+    assert(changes==5);
-+    AKSetGuestDisplayGeometry(viewports[4],120);
-+    assert(changes==5); // unchanged layouts do not flood guest callbacks
-+    assert(CGDisplayRemoveReconfigurationCallback(DisplayChanged,&changes)==kCGErrorSuccess);
-+    AKSetGuestDisplayGeometry(CGSizeMake(NAN,0),120);
-+    CGSize retained; assert(AKGetGuestDisplayGeometry(&retained,NULL));
-+    assert(CGSizeEqualToSize(retained,viewports[4]));
-     puts("online displays, physical size, OpenGL masks, capture and display modes: PASS");
- } }
---- a/tests/test_appkit_views.m
-+++ b/tests/test_appkit_views.m
-@@ -4,6 +4,10 @@
- #import "AppKit.h"
- #import "TouchControls.h"
- #include <assert.h>
-+@interface NSScreen (FixtureBackingCoordinates)
-+- (CGRect)convertRectToBacking:(CGRect)rect;
-+- (CGRect)convertRectFromBacking:(CGRect)rect;
-+@end
- 
- // Draws by updating its layer, as Wine's Mac driver does.
- @interface LayerView : NSView
-@@ -299,5 +303,20 @@
-            (NSEventModifierFlagShift | LeftShift | NSEventModifierFlagCapsLock));
-     assert(AKModifiersReconciled(held, 0) == 0);
-     assert(AKModifiersReconciled(AKModifiersAfterKey(0, 0xE6, YES), NSEventModifierFlagOption) == (NSEventModifierFlagOption | RightOption));
-+    // Logical coordinates stay in points at every phone size and backing scale.
-+    const CGSize phoneSizes[]={ {852,393},{956,440},{678,466},{951,669},{669,951} };
-+    for (NSUInteger i=0;i<sizeof(phoneSizes)/sizeof(phoneSizes[0]);i++) {
-+        AKSetGuestDisplayGeometry(phoneSizes[i],120);
-+        NSScreen *screen=NSScreen.mainScreen;
-+        assert(CGSizeEqualToSize(screen.frame.size,phoneSizes[i]));
-+        assert(screen.backingScaleFactor==other.backingScaleFactor);
-+        CGRect points=CGRectMake(12,24,100,60);
-+        CGRect pixels=[screen convertRectToBacking:points];
-+        assert(pixels.size.width==100*other.backingScaleFactor);
-+        assert(CGRectEqualToRect([screen convertRectFromBacking:pixels],points));
-+        [other ak_hostBoundsChanged:(CGRect){CGPointZero,phoneSizes[i]}];
-+        assert(CGSizeEqualToSize(plain.frame.size,phoneSizes[i]));
-+        assert(plain.layer.contentsScale==screen.backingScaleFactor);
-+    }
-     puts("display pass, frame rects, panels, tracking areas, layer placement, contents scale, window ordering, Quartz events, window numbers and modifier keys: PASS");
- } }

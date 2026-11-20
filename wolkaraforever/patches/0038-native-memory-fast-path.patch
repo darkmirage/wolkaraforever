@@ -8,11 +8,17 @@
 #
 # Applies to: runtime/NativeGuest.m
 # Upstream: candidate.
-
+#
+# Rebased onto Tolkara edc3628: upstream logs memsets of 64 MiB and more with their caller
+# at the top of guest_memset; the fast path follows that log, so the diagnostic still sees
+# every large fill.
+#
 diff --git a/runtime/NativeGuest.m b/runtime/NativeGuest.m
+index 4166d9f..da030c4 100644
 --- a/runtime/NativeGuest.m
 +++ b/runtime/NativeGuest.m
-@@ -510,5 +510,12 @@ static void *write_view(void *destination, size_t size) {
+@@ -601,6 +601,13 @@ static void *write_view(void *destination, size_t size) {
+     return destination;
  }
  static void *guest_memcpy(void *destination, const void *source, size_t size) {
 +    // Outside the guest arena, native libc owns both mappings. This is the
@@ -25,7 +31,8 @@ diff --git a/runtime/NativeGuest.m b/runtime/NativeGuest.m
      if (inside_exec(destination,size)) {
          if (!final_image_write(destination,source,size)) abort();
          return destination;
-@@ -523,5 +530,7 @@ static void *guest_memcpy(void *destination, const void *source, size_t size) {
+@@ -614,6 +621,8 @@ static void *guest_memcpy(void *destination, const void *source, size_t size) {
+     return destination;
  }
  static void *guest_memmove(void *destination, const void *source, size_t size) {
 +    if (!gsv_enabled() && !inside(destination,size)) return memmove(destination,source,size);
@@ -33,9 +40,10 @@ diff --git a/runtime/NativeGuest.m b/runtime/NativeGuest.m
      if (inside_exec(destination,size)) {
          if (!final_image_write(destination,source,size)) abort();
          return destination;
-@@ -538,5 +547,7 @@ static void *guest_memmove(void *destination, const void *source, size_t size) {
- }
- static void *guest_memset(void *destination, int value, size_t size) {
+@@ -634,6 +643,8 @@ static void *guest_memset(void *destination, int value, size_t size) {
+         char where[256]; describe_caller(__builtin_return_address(0),where,sizeof where);
+         LOG("[native] memset(%p,%d,%zu MiB) from %s\n",destination,value,size>>20,where);
+     }
 +    if (!gsv_enabled() && !inside(destination,size)) return memset(destination,value,size);
 +    if (signed_image.active && !inside_exec(destination,size)) return memset(destination,value,size);
      if (inside_exec(destination,size)) {

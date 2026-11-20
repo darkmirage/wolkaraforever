@@ -22,8 +22,12 @@
 # Applies to: translation/AppKit/AppKit.m
 # Upstream: candidate (not submitted).
 #
+# Rebased onto Tolkara edc3628: upstream hosts AKHostView inside an AKHostContainerView (the
+# view controller's view is the container), so contentScaleFactor is set on the host view,
+# _host, not on self.view.
+#
 diff --git a/translation/AppKit/AppKit.m b/translation/AppKit/AppKit.m
-index 168bb71..9c3ef9a 100644
+index a052180..bde7a2e 100644
 --- a/translation/AppKit/AppKit.m
 +++ b/translation/AppKit/AppKit.m
 @@ -4,6 +4,9 @@
@@ -36,23 +40,18 @@ index 168bb71..9c3ef9a 100644
  #import "AKPerformanceOverlay.h"
  #import <GameController/GameController.h>
  #import <objc/message.h>
-@@ -717,7 +720,14 @@ static BOOL AKIsRight(UIEvent *ev) { return (ev.buttonMask & UIEventButtonMaskSe
- @interface AKHostViewController : UIViewController
- @end
- @implementation AKHostViewController
--- (void)loadView { self.view = [[AKHostView alloc] initWithFrame:UIScreen.mainScreen.bounds]; self.view.backgroundColor = UIColor.blackColor; }
-+- (void)loadView {
-+    self.view = [[AKHostView alloc] initWithFrame:UIScreen.mainScreen.bounds];
-+    self.view.backgroundColor = UIColor.blackColor;
+@@ -1038,6 +1041,10 @@ static BOOL AKIsRight(UIEvent *ev) { return (ev.buttonMask & UIEventButtonMaskSe
+     container.host = _host;
+     [container addSubview:_host];
+     self.view = container;
 +    // What the guest actually derives its surface from. NSScreen's answer alone
 +    // changes nothing: the drawable follows this view. One pixel per point, so the
 +    // guest draws 1366x1024 and UIKit stretches it to the 2732x2048 panel.
-+    self.view.contentScaleFactor = AKGuestBackingScale();
-+}
++    _host.contentScaleFactor = AKGuestBackingScale();
+ }
  - (BOOL)prefersStatusBarHidden { return YES; }
  // Ask UIKit to require a deliberate repeat of edge gestures while gaming.
- // This is an immersive preference, not a device-wide kiosk lock.
-@@ -1109,10 +1119,20 @@ static void logLayer(CALayer *layer,unsigned depth) {
+@@ -1573,10 +1580,20 @@ void AKGuestProcessDidExit(size_t slot) {
          }
          NSTimeInterval left = date ? date.timeIntervalSinceNow : 0;
          if (pumped && left <= 0) return nil;

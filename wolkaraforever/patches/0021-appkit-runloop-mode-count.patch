@@ -18,22 +18,17 @@
 # Applies to: translation/AppKit/AppKit.m
 # Upstream: candidate (not submitted).
 #
+# Rebased onto Tolkara edc3628: context only - upstream added guestWindowOption() just
+# above.
+#
 diff --git a/translation/AppKit/AppKit.m b/translation/AppKit/AppKit.m
-index 225efa2..168bb71 100644
+index c8cf233..a052180 100644
 --- a/translation/AppKit/AppKit.m
 +++ b/translation/AppKit/AppKit.m
-@@ -8,6 +8,7 @@
- #import <GameController/GameController.h>
- #import <objc/message.h>
- #import <objc/runtime.h>
-+#include <stdatomic.h>
- 
- NSApplication *NSApp;
- 
-@@ -734,6 +735,36 @@ static BOOL AKIsRight(UIEvent *ev) { return (ev.buttonMask & UIEventButtonMaskSe
- // hidden here are shown again, once no guest window is visible. Not yet
- // validated on a device.
- static NSHashTable<UIWindow *> *guestUIWindows, *coveredWindows;
+@@ -1060,6 +1060,36 @@ static BOOL guestWindowOption(NSString *argument, const char *name) {
+     const char *value=getenv(name);
+     return [NSProcessInfo.processInfo.arguments containsObject:argument] || (value && !strcmp(value,"1"));
+ }
 +
 +// Counts run loops entered with the common-modes set.
 +//
@@ -67,8 +62,8 @@ index 225efa2..168bb71 100644
  static BOOL coversLauncher(void) {
      static BOOL enabled; static dispatch_once_t once;
      dispatch_once(&once, ^{
-@@ -1052,6 +1083,7 @@ static void logLayer(CALayer *layer,unsigned depth) {
-     [(e.window ?: self.keyWindow) sendEvent:e];
+@@ -1517,6 +1547,7 @@ void AKGuestProcessDidExit(size_t slot) {
+     if (![NSWindow ak_hasExited:target]) [target sendEvent:e];
  }
  - (NSEvent *)nextEventMatchingMask:(NSUInteger)mask untilDate:(NSDate *)date inMode:(NSString *)mode dequeue:(BOOL)dq {
 +    AKWatchRunLoopModes();

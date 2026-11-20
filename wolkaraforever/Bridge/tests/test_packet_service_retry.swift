@@ -36,7 +36,8 @@ private func reply(to packet: Data, sequence: UInt32, flags: UInt8) -> Data {
         for connected in [false,true] {
             let probe = PacketServiceProbe(), done = DispatchSemaphore(value:0)
             var resetSent = false
-            probe.start(output:{ packet in
+            // The device service's usual port (TK_AUTH_SERVICE_PORT); the probe needs it named.
+            probe.start(servicePort:49152,output:{ packet in
                 let b = Array(packet), flags = b[Int(b[0] & 15)*4+13]
                 let response: Data
                 if flags & 2 != 0 {

@@ -12,10 +12,122 @@
 #             authorization/App/LocalAuthorization.{h,m}
 # Upstream: candidate (not submitted).
 #
+diff --git a/authorization/App/LocalAuthorization.h b/authorization/App/LocalAuthorization.h
+index e9ad22a..183fad3 100644
+--- a/authorization/App/LocalAuthorization.h
++++ b/authorization/App/LocalAuthorization.h
+@@ -11,6 +11,9 @@ FOUNDATION_EXPORT NSNotificationName const TKLocalServiceWaiting;
+ 
+ @interface TKLocalAuthorization : NSObject
+ @property(nonatomic,readonly) BOOL localSessionReady;
++// Why the last attempt refused, in the layer's blocked-state vocabulary, or nil
++// when it was not a refusal. A ready session never carries a reason.
++@property(nonatomic,readonly,copy) NSString *localSessionBlockedState;
+ // Direct reachability only, no pairing/credentials/debugging. A TCP connection
+ // alone does not authenticate the service or grant execution permission.
+ + (void)probeDirectAccess:(void (^)(NSString *))completion;
+diff --git a/authorization/App/LocalAuthorization.m b/authorization/App/LocalAuthorization.m
+index dcc19d7..acd2456 100644
+--- a/authorization/App/LocalAuthorization.m
++++ b/authorization/App/LocalAuthorization.m
+@@ -5,6 +5,7 @@
+ #import "LocalArenaPublisher.h"
+ #import "LocalArenaPoller.h"
+ #import "LocalServiceRetry.h"
++#import "AuthorizationBlockedState.h"
+ #include "Control/ArenaControl.h"
+ #import <NetworkExtension/NetworkExtension.h>
+ #import <QuartzCore/QuartzCore.h>
+@@ -32,6 +33,7 @@ static void announceArena(NSNotificationName name, NSDictionary *info) {
+ @interface TKLocalAuthorization ()
+ @property(nonatomic,strong) NETunnelProviderManager *manager;
+ @property(nonatomic,readwrite) BOOL localSessionReady;
++@property(nonatomic,readwrite,copy) NSString *localSessionBlockedState;
+ @property(nonatomic,strong) TKLocalServiceRetry *serviceRetry;
+ @property(nonatomic) NSUInteger serviceGeneration;
+ @end
+@@ -68,6 +70,7 @@ static void TKWaitForStoppedRoute(NETunnelProviderManager *manager,CFTimeInterva
+     [self.serviceRetry cancel];
+     NSUInteger generation=++self.serviceGeneration;
+     self.localSessionReady=NO;
++    self.localSessionBlockedState=nil;
+     [self startLocalRoute:^(NSString *startResult) {
+         if(self.serviceGeneration!=generation) {completion(@"Local service setup cancelled.");return;}
+         TKWaitForRoute(self.manager,CACurrentMediaTime()+10,^(BOOL connected) {
+@@ -77,6 +80,9 @@ static void TKWaitForStoppedRoute(NETunnelProviderManager *manager,CFTimeInterva
+             }
+             __weak TKLocalAuthorization *weakSelf=self;
+             __block __weak TKLocalServiceRetry *weakRetry;
++            // The most recent attempt's cause, so a refusal names the step that
++            // failed rather than only the report text.
++            __block NSString *blockedState=nil;
+             self.serviceRetry=[[TKLocalServiceRetry alloc] initWithTimeout:mode==3?120:60 interval:2 attempt:^(TKLocalServiceReply reply) {
+                 TKLocalAuthorization *self=weakSelf;
+                 if(!self) {reply(TKLocalServiceFailed,@"Local authorization owner unavailable.");return;}
+@@ -107,6 +113,12 @@ static void TKWaitForStoppedRoute(NETunnelProviderManager *manager,CFTimeInterva
+                         // Only the helper can classify a failed initial TCP
+                         // connection. Never infer retryability from report text.
+                         BOOL retry=mode==3 && valid && !ready && [state[@"serviceUnavailable"] isEqual:@YES];
++                        // The response handler runs off the main queue and the completion below
++                        // runs on it, so the hand-off goes through that queue rather than a bare
++                        // assignment. Enqueued before the reply, so the completion always reads
++                        // the cause this attempt produced.
++                        NSString *cause=ready?nil:WKAuthorizationBlockedState(valid?state[@"blockedState"]:nil);
++                        dispatch_async(dispatch_get_main_queue(),^{ blockedState=cause; });
+                         reply(ready || (mode!=3 && valid)?TKLocalServiceReady:retry?TKLocalServiceUnavailable:TKLocalServiceFailed,report);
+                     }];
+                     if(!sent)reply(TKLocalServiceFailed,[result stringByAppendingString:@" Provider status unavailable."]);
+@@ -119,6 +131,7 @@ static void TKWaitForStoppedRoute(NETunnelProviderManager *manager,CFTimeInterva
+                 TKLocalAuthorization *self=weakSelf;
+                 if(!self)return;
+                 self.localSessionReady=mode==3 && ready;
++                self.localSessionBlockedState=ready?nil:blockedState;
+                 self.serviceRetry=nil;
+                 if(!ready)[self.manager.connection stopVPNTunnel];
+                 completion(report);
+diff --git a/authorization/Tunnel/LocalPacketProvider.m b/authorization/Tunnel/LocalPacketProvider.m
+index 4fb9f17..1b5a9bb 100644
+--- a/authorization/Tunnel/LocalPacketProvider.m
++++ b/authorization/Tunnel/LocalPacketProvider.m
+@@ -90,7 +90,15 @@ static uint16_t TKRequestedServicePort(NSDictionary *request) {
+     if([request isKindOfClass:NSDictionary.class] && [request[@"version"] isEqual:@TK_AUTH_PROTOCOL_VERSION] &&
+        ([request[@"operation"] isEqual:@"verifyPairing"] || [request[@"operation"] isEqual:@"verifyTunnel"] || [request[@"operation"] isEqual:@"prepareAuthorization"])) {
+         NSString *device=request[@"deviceIdentifier"];
+-        if(![device isKindOfClass:NSString.class] || !device.length || device.length>1024) {completion(nil);return;}
++        // A reply the app can act on, never silence: the launch UI has to say
++        // that this iPad is not enrolled instead of reporting a dead provider.
++        if(![device isKindOfClass:NSString.class] || !device.length || device.length>1024) {
++            NSMutableDictionary *response=[TKRouteStatus(self.running,self.reflected,self.dropped) mutableCopy];
++            response[@"helperProbe"]=@"No enrolled device identifier; enrolment is a Mac step (tools/enroll.sh).";
++            response[@"readyForPreparation"]=@NO;
++            response[@"blockedState"]=@"notEnrolled";
++            completion([NSJSONSerialization dataWithJSONObject:response options:0 error:NULL]);return;
++        }
+         // A mobile-network transition can make the local service available.
+         // Recreate only a probe that failed before its first TCP connection;
+         // its failure path has already invalidated and closed every resource.
+@@ -101,6 +109,7 @@ static uint16_t TKRequestedServicePort(NSDictionary *request) {
+                 NSMutableDictionary *response=[TKRouteStatus(self.running,self.reflected,self.dropped) mutableCopy];
+                 response[@"helperProbe"]=@"Local service retry limit reached.";
+                 response[@"readyForPreparation"]=@NO;
++                response[@"blockedState"]=@"serviceUnavailable";
+                 completion([NSJSONSerialization dataWithJSONObject:response options:0 error:NULL]);return;
+             }
+             self.retiredProbes=[self.retiredProbes arrayByAddingObject:self.packetProbe];
+@@ -118,6 +127,8 @@ static uint16_t TKRequestedServicePort(NSDictionary *request) {
+             response[@"helperProbe"]=report;
+             response[@"readyForPreparation"]=@(probe.authorizationReady);
+             response[@"serviceUnavailable"]=@(probe.serviceUnavailable);
++            // nil when ready: the app must not see a stale cause beside success.
++            response[@"blockedState"]=probe.blockedState ?: [NSNull null];
+             completion([NSJSONSerialization dataWithJSONObject:response options:0 error:NULL]);
+         };
+         uint16_t port=TKRequestedServicePort(request);
 diff --git a/authorization/Tunnel/PacketServiceProbe.swift b/authorization/Tunnel/PacketServiceProbe.swift
+index 0f38323..f28bc09 100644
 --- a/authorization/Tunnel/PacketServiceProbe.swift
 +++ b/authorization/Tunnel/PacketServiceProbe.swift
-@@ -24,6 +24,9 @@
+@@ -27,6 +27,9 @@ import Network
      private var retainAuthorization = false
      @objc private(set) var authorizationReady = false
      @objc private(set) var serviceUnavailable = false
@@ -25,8 +137,8 @@ diff --git a/authorization/Tunnel/PacketServiceProbe.swift b/authorization/Tunne
      private var serviceConnected = false
      private var proxy: LocalPacketTCPProxy?
      private var manager: TunnelConnectionManager?
-@@ -78,8 +81,14 @@
-             guard reservedPortFD >= 0 else { finish("Could not reserve the packet probe's local port.");return }
+@@ -89,8 +92,14 @@ import Network
+             self.codec = codec
              do {
                  if let deviceIdentifier {
 -                    guard let enrollment = try PairingKeychain().load(deviceIdentifier:deviceIdentifier) else {
@@ -42,7 +154,7 @@ diff --git a/authorization/Tunnel/PacketServiceProbe.swift b/authorization/Tunne
                      }
                      authentication = PairingSession(identity:enrollment.identity)
                      self.enrollment = enrollment
-@@ -179,11 +188,12 @@
+@@ -190,11 +199,12 @@ import Network
                              }
                          }
                      }
@@ -56,7 +168,7 @@ diff --git a/authorization/Tunnel/PacketServiceProbe.swift b/authorization/Tunne
                  finish("Packet-flow TCP connection failed (\(reason)).")
              case .peerClosed, .closed: finish("Packet-flow service closed before the handshake completed.")
              default: break
-@@ -214,14 +224,14 @@
+@@ -225,14 +235,14 @@ import Network
                                  let service = catalog.services["com.apple.internal.dt.remote.debugproxy"]
                                  let names = catalog.services.keys.filter { $0.contains("debug") || $0.contains("developer") || $0.contains("image") }.sorted().map { "\($0) (XPC=\(catalog.services[$0]!.usesRemoteXPC))" }.joined(separator:", ")
                                  if let service { self.probeDebugService(manager:manager,port:service.port) }
@@ -75,7 +187,7 @@ diff --git a/authorization/Tunnel/PacketServiceProbe.swift b/authorization/Tunne
              }
          },onClosed:{ [weak self] _ in
              guard let self else { return };self.queue.async { self.finish("The helper's private TLS packet bridge closed or failed.") }
-@@ -251,7 +261,7 @@
+@@ -262,7 +272,7 @@ import Network
                                      try manager.write(id,data:Data([43])) // acknowledge final RSP reply
                                      manager.cancelStream(id);self.debugStream = nil
                                      try self.arenaService.setVerifiedDebugService(manager:manager,port:port)
@@ -84,7 +196,7 @@ diff --git a/authorization/Tunnel/PacketServiceProbe.swift b/authorization/Tunne
                                      let callback = self.completion;self.completion = nil
                                      callback?("Authenticated local debugger is ready for our app's bound memory-preparation request. No process attached yet.")
                                  } else {
-@@ -262,13 +272,16 @@
+@@ -273,13 +283,16 @@ import Network
                              case .nack,.badChecksum: throw PairingError.malformed
                              }
                          }
@@ -104,111 +216,3 @@ diff --git a/authorization/Tunnel/PacketServiceProbe.swift b/authorization/Tunne
      private func finish(_ report: String) {
          guard !finished else { return }; finished = true
          authorizationReady = false
-diff --git a/authorization/Tunnel/LocalPacketProvider.m b/authorization/Tunnel/LocalPacketProvider.m
---- a/authorization/Tunnel/LocalPacketProvider.m
-+++ b/authorization/Tunnel/LocalPacketProvider.m
-@@ -82,7 +82,15 @@
-     if([request isKindOfClass:NSDictionary.class] && [request[@"version"] isEqual:@TK_AUTH_PROTOCOL_VERSION] &&
-        ([request[@"operation"] isEqual:@"verifyPairing"] || [request[@"operation"] isEqual:@"verifyTunnel"] || [request[@"operation"] isEqual:@"prepareAuthorization"])) {
-         NSString *device=request[@"deviceIdentifier"];
--        if(![device isKindOfClass:NSString.class] || !device.length || device.length>1024) {completion(nil);return;}
-+        // A reply the app can act on, never silence: the launch UI has to say
-+        // that this iPad is not enrolled instead of reporting a dead provider.
-+        if(![device isKindOfClass:NSString.class] || !device.length || device.length>1024) {
-+            NSMutableDictionary *response=[TKRouteStatus(self.running,self.reflected,self.dropped) mutableCopy];
-+            response[@"helperProbe"]=@"No enrolled device identifier; enrolment is a Mac step (tools/enroll.sh).";
-+            response[@"readyForPreparation"]=@NO;
-+            response[@"blockedState"]=@"notEnrolled";
-+            completion([NSJSONSerialization dataWithJSONObject:response options:0 error:NULL]);return;
-+        }
-         // A mobile-network transition can make the local service available.
-         // Recreate only a probe that failed before its first TCP connection;
-         // its failure path has already invalidated and closed every resource.
-@@ -93,6 +101,7 @@
-                 NSMutableDictionary *response=[TKRouteStatus(self.running,self.reflected,self.dropped) mutableCopy];
-                 response[@"helperProbe"]=@"Local service retry limit reached.";
-                 response[@"readyForPreparation"]=@NO;
-+                response[@"blockedState"]=@"serviceUnavailable";
-                 completion([NSJSONSerialization dataWithJSONObject:response options:0 error:NULL]);return;
-             }
-             self.retiredProbes=[self.retiredProbes arrayByAddingObject:self.packetProbe];
-@@ -110,6 +119,8 @@
-             response[@"helperProbe"]=report;
-             response[@"readyForPreparation"]=@(probe.authorizationReady);
-             response[@"serviceUnavailable"]=@(probe.serviceUnavailable);
-+            // nil when ready: the app must not see a stale cause beside success.
-+            response[@"blockedState"]=probe.blockedState ?: [NSNull null];
-             completion([NSJSONSerialization dataWithJSONObject:response options:0 error:NULL]);
-         };
-         if([request[@"operation"] isEqual:@"prepareAuthorization"])
-diff --git a/authorization/App/LocalAuthorization.h b/authorization/App/LocalAuthorization.h
---- a/authorization/App/LocalAuthorization.h
-+++ b/authorization/App/LocalAuthorization.h
-@@ -11,6 +11,9 @@
- 
- @interface TKLocalAuthorization : NSObject
- @property(nonatomic,readonly) BOOL localSessionReady;
-+// Why the last attempt refused, in the layer's blocked-state vocabulary, or nil
-+// when it was not a refusal. A ready session never carries a reason.
-+@property(nonatomic,readonly,copy) NSString *localSessionBlockedState;
- // Direct reachability only, no pairing/credentials/debugging. A TCP connection
- // alone does not authenticate the service or grant execution permission.
- + (void)probeDirectAccess:(void (^)(NSString *))completion;
-diff --git a/authorization/App/LocalAuthorization.m b/authorization/App/LocalAuthorization.m
---- a/authorization/App/LocalAuthorization.m
-+++ b/authorization/App/LocalAuthorization.m
-@@ -4,6 +4,7 @@
- #import "LocalArenaPublisher.h"
- #import "LocalArenaPoller.h"
- #import "LocalServiceRetry.h"
-+#import "AuthorizationBlockedState.h"
- #include "Control/ArenaControl.h"
- #import <NetworkExtension/NetworkExtension.h>
- #import <QuartzCore/QuartzCore.h>
-@@ -31,6 +32,7 @@
- @interface TKLocalAuthorization ()
- @property(nonatomic,strong) NETunnelProviderManager *manager;
- @property(nonatomic,readwrite) BOOL localSessionReady;
-+@property(nonatomic,readwrite,copy) NSString *localSessionBlockedState;
- @property(nonatomic,strong) TKLocalServiceRetry *serviceRetry;
- @property(nonatomic) NSUInteger serviceGeneration;
- @end
-@@ -67,6 +69,7 @@
-     [self.serviceRetry cancel];
-     NSUInteger generation=++self.serviceGeneration;
-     self.localSessionReady=NO;
-+    self.localSessionBlockedState=nil;
-     [self startLocalRoute:^(NSString *startResult) {
-         if(self.serviceGeneration!=generation) {completion(@"Local service setup cancelled.");return;}
-         TKWaitForRoute(self.manager,CACurrentMediaTime()+10,^(BOOL connected) {
-@@ -76,6 +79,9 @@
-             }
-             __weak TKLocalAuthorization *weakSelf=self;
-             __block __weak TKLocalServiceRetry *weakRetry;
-+            // The most recent attempt's cause, so a refusal names the step that
-+            // failed rather than only the report text.
-+            __block NSString *blockedState=nil;
-             self.serviceRetry=[[TKLocalServiceRetry alloc] initWithTimeout:mode==3?120:60 interval:2 attempt:^(TKLocalServiceReply reply) {
-                 TKLocalAuthorization *self=weakSelf;
-                 if(!self) {reply(TKLocalServiceFailed,@"Local authorization owner unavailable.");return;}
-@@ -99,6 +105,12 @@
-                         // Only the helper can classify a failed initial TCP
-                         // connection. Never infer retryability from report text.
-                         BOOL retry=mode==3 && valid && !ready && [state[@"serviceUnavailable"] isEqual:@YES];
-+                        // The response handler runs off the main queue and the completion below
-+                        // runs on it, so the hand-off goes through that queue rather than a bare
-+                        // assignment. Enqueued before the reply, so the completion always reads
-+                        // the cause this attempt produced.
-+                        NSString *cause=ready?nil:WKAuthorizationBlockedState(valid?state[@"blockedState"]:nil);
-+                        dispatch_async(dispatch_get_main_queue(),^{ blockedState=cause; });
-                         reply(ready || (mode!=3 && valid)?TKLocalServiceReady:retry?TKLocalServiceUnavailable:TKLocalServiceFailed,report);
-                     }];
-                     if(!sent)reply(TKLocalServiceFailed,[result stringByAppendingString:@" Provider status unavailable."]);
-@@ -111,6 +123,7 @@
-                 TKLocalAuthorization *self=weakSelf;
-                 if(!self)return;
-                 self.localSessionReady=mode==3 && ready;
-+                self.localSessionBlockedState=ready?nil:blockedState;
-                 self.serviceRetry=nil;
-                 if(!ready)[self.manager.connection stopVPNTunnel];
-                 completion(report);

@@ -42,6 +42,15 @@ extern NSString *const AKTouchSpeechLanguageStoredKey;   // "stored"
 // before adding them, and the launcher's On-Screen Controls switch stores its
 // choice under this key.
 extern NSString *const AKTouchControlsDefaultsKey;   // "AKTouchControls"
+// The platform's Pointer Acceleration switch, which the AppKit host reads when a game starts
+// (its raw-pointer path, translation/AppKit/AppKit.m): on without a stored choice. Off, a mouse's
+// free pointer follows its raw motion times AKPointerSpeedDefaultsKey (1 without a stored choice).
+// The platform declared these beside its own controls, which this file replaces, so they are
+// carried here with the platform's keys and answers.
+extern NSString *const AKPointerAccelerationDefaultsKey;   // "AKPointerAcceleration"
+extern NSString *const AKPointerSpeedDefaultsKey;          // "AKPointerSpeed"
+BOOL AKPointerAccelerationEnabled(void);
+double AKPointerSpeed(void);
 
 // The saved game password, and only under the launcher's experimental Battle.net login. The
 // launcher owns the Keychain item and the setting (WoW/BattleNetSavedPassword.h); this library owns
@@ -117,7 +126,8 @@ extern NSString *const AKChatComposerOutcomeKey;                        // "outc
 - (void)touchKeyboardVisibilityChanged:(BOOL)visible;
 - (void)touchGamepadPreferenceChanged:(BOOL)enabled;
 - (void)touchControlSettings;
-// One key pressed or released, held as long as a control is (patch 0059).
+// One key pressed or released, held as long as a control is. The platform's host has it
+// since Tolkara edc3628 (the layer's patch 0059 used to add it).
 - (void)touchKey:(unsigned short)code characters:(NSString *)characters pressed:(BOOL)pressed;
 @end
 

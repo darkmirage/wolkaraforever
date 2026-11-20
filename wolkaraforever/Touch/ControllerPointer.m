@@ -2,27 +2,27 @@
 #include <string.h>
 
 typedef struct {
-    AKTrackpadEmit emit;
+    AKLayerTrackpadEmit emit;
     void *_Nullable context;
 } AKControllerPointerSink;
 
 // Movement and scrolling pass through; the presses a tap or a hold would make do not. See the
 // header for why a controller's touchpad does not tap to click.
-static void AKControllerPointerMotionOnly(void *context, AKTrackpadAction action, double x, double y,
+static void AKControllerPointerMotionOnly(void *context, AKLayerTrackpadAction action, double x, double y,
                                           unsigned button) {
     AKControllerPointerSink *sink = context;
-    if (action == AKTrackpadDown || action == AKTrackpadUp) return;
+    if (action == AKLayerTrackpadDown || action == AKLayerTrackpadUp) return;
     sink->emit(sink->context, action, x, y, button);
 }
 
 void AKControllerPointerUpdate(AKControllerPointer *pointer, unsigned fingers, double x, double y,
-                               double time, AKTrackpadEmit emit, void *context) {
+                               double time, AKLayerTrackpadEmit emit, void *context) {
     if (!pointer || !emit) return;
     AKControllerPointerSink sink = { emit, context };
-    AKTrackpadUpdate(&pointer->pad, fingers, x, y, time, AKControllerPointerMotionOnly, &sink);
+    AKLayerTrackpadUpdate(&pointer->pad, fingers, x, y, time, AKControllerPointerMotionOnly, &sink);
 }
 
-void AKControllerPointerClick(AKControllerPointer *pointer, bool pressed, AKTrackpadEmit emit,
+void AKControllerPointerClick(AKControllerPointer *pointer, bool pressed, AKLayerTrackpadEmit emit,
                               void *context) {
     if (!pointer || !emit || pressed == pointer->clicked) return;
     if (pressed) {
@@ -30,15 +30,15 @@ void AKControllerPointerClick(AKControllerPointer *pointer, bool pressed, AKTrac
         // if a finger came or went in between.
         pointer->button = pointer->pad.fingers >= 2 ? 1 : 0;
         pointer->clicked = true;
-        emit(context, AKTrackpadDown, 0, 0, pointer->button);
+        emit(context, AKLayerTrackpadDown, 0, 0, pointer->button);
     } else {
         pointer->clicked = false;
-        emit(context, AKTrackpadUp, 0, 0, pointer->button);
+        emit(context, AKLayerTrackpadUp, 0, 0, pointer->button);
     }
 }
 
-void AKControllerPointerReset(AKControllerPointer *pointer, AKTrackpadEmit emit, void *context) {
+void AKControllerPointerReset(AKControllerPointer *pointer, AKLayerTrackpadEmit emit, void *context) {
     if (!pointer) return;
-    if (pointer->clicked && emit) emit(context, AKTrackpadUp, 0, 0, pointer->button);
+    if (pointer->clicked && emit) emit(context, AKLayerTrackpadUp, 0, 0, pointer->button);
     memset(pointer, 0, sizeof *pointer);
 }

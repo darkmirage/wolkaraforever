@@ -1,0 +1,47 @@
+# WolkaraForever layer patch 0074 - tests: the debug peer's simulated time, per packet
+#
+# Why: Tolkara edc3628 raised the debugger session's total deadline from 900 to 1800
+# seconds and added two simulated-time cases to tests/test_debug_arena_peer.py: an
+# exchange whose packets each take 0.25 s must succeed after more than 900 s, and one
+# at 0.5 s a packet must time out at 1800 s. Those steps were chosen for the platform's
+# exchange, one read per round trip in hexadecimal. The layer's pipelined preflight
+# (0020) and binary readback (0071) send about a fifth of the packets (714 for that
+# exchange), so the first case finished at 178.5 s and failed its bound, and the
+# second would have succeeded instead of timing out.
+#
+# What it does: the same two cases, at 1.5 s a packet (1071 s, between the two
+# deadlines) and 3 s a packet (past 1800 s). Neither is near the session's 10 s
+# per-command deadline. The session and its deadlines are unchanged.
+#
+# Applies after: 0071-binary-zero-verification.patch
+# Applies to: tests/test_debug_arena_peer.py
+# Upstream: not a candidate - it exists because of the layer's own protocol changes.
+#
+
+diff --git a/tests/test_debug_arena_peer.py b/tests/test_debug_arena_peer.py
+index b3b371a..e59b056 100644
+--- a/tests/test_debug_arena_peer.py
++++ b/tests/test_debug_arena_peer.py
+@@ -192,7 +192,7 @@ def exchange(mode='success',packet_size='1000',fragment=False,time_step=.001):
+             if mode in ('detach_error','detach_trailing'):
+                 assert result['detached'] is False
+             if mode=='detach_trailing': assert result['failure']=='protocolFailure' and state['detach']
+-        if time_step==.25: assert 900 < driver.now < 1800,driver.now
++        if time_step==1.5: assert 900 < driver.now < 1800,driver.now
+         if mode=='total_deadline': assert driver.now>=1800 and result['failure']=='timedOut'
+         assert driver.call(tick=True)['events']==[]
+         return result
+@@ -208,8 +208,11 @@ def main():
+     exchange(packet_size='8000'); exchange(packet_size='100')
+     # Simulated time: sustained valid work beyond the former deadline succeeds,
+     # but the new absolute bound still terminates progress. No wall-clock wait.
+-    exchange(packet_size='100',time_step=.25)
+-    exchange(mode='total_deadline',packet_size='100',time_step=.5)
++    # The steps are per packet sent: the layer's pipelined preflight and binary
++    # readback send about a fifth of the packets the platform's exchange does
++    # (714 here), so a packet takes 1.5 s (1071 s in all) and then 3 s (past 1800).
++    exchange(packet_size='100',time_step=1.5)
++    exchange(mode='total_deadline',packet_size='100',time_step=3)
+     assert exchange('no_ack_checksums').get('success') is True
+     for mode in ('checksum','nack','deadline','disconnect','cancel','coalesced','response_without_ack'):
+         with Driver() as d:

@@ -10,10 +10,11 @@
 # Upstream: candidate.
 
 diff --git a/translation/AudioToolbox/Output.m b/translation/AudioToolbox/Output.m
+index 0afa1b0..38bdf21 100644
 --- a/translation/AudioToolbox/Output.m
 +++ b/translation/AudioToolbox/Output.m
-@@ -3,6 +3,13 @@
- #import "AKSupport.h"
+@@ -4,6 +4,13 @@
+ #import "SessionAudio.h"
  #include <dlfcn.h>
  #include <stdatomic.h>
 +// The probe wraps every audio callback and scans its output.  Audio playback
@@ -26,17 +27,17 @@ diff --git a/translation/AudioToolbox/Output.m b/translation/AudioToolbox/Output
  @interface AKAudioRenderProbe : NSObject {
  @public
      AURenderCallbackStruct original;
-@@ -83,7 +90,7 @@ OSStatus AudioUnitSetProperty(AudioUnit unit,AudioUnitPropertyID property,Audio
+@@ -105,7 +112,7 @@ OSStatus AudioUnitSetProperty(AudioUnit unit,AudioUnitPropertyID property,AudioU
          UInt32 requested=0,current=0;
          if(!data || size!=sizeof requested)s=kAudioUnitErr_InvalidPropertyValue;
          else { memcpy(&requested,data,sizeof requested);s=defaultOutput(&current);if(!s && requested!=current)s=kAudioUnitErr_InvalidPropertyValue; }
 -    } else if(property==kAudioUnitProperty_SetRenderCallback && scope==kAudioUnitScope_Input && element==0 && data && size==sizeof(AURenderCallbackStruct) && remoteOutput(unit)) {
 +    } else if(property==kAudioUnitProperty_SetRenderCallback && scope==kAudioUnitScope_Input && element==0 && data && size==sizeof(AURenderCallbackStruct) && remoteOutput(unit) && renderProbeEnabled()) {
          prepareProbes();AKAudioRenderProbe *probe=[AKAudioRenderProbe new];memcpy(&probe->original,data,size);
+         probe->processSlot=AKCallbackProcess((uintptr_t)probe->original.inputProc);
          if(probe->original.inputProc) {
-             AURenderCallbackStruct observed={observeRender,(__bridge void *)probe};
-
 diff --git a/translation/Security/LegacyCrypto.c b/translation/Security/LegacyCrypto.c
+index acceb20..a36d2cf 100644
 --- a/translation/Security/LegacyCrypto.c
 +++ b/translation/Security/LegacyCrypto.c
 @@ -22,6 +22,13 @@ typedef struct Context {
@@ -53,7 +54,7 @@ diff --git a/translation/Security/LegacyCrypto.c b/translation/Security/LegacyCr
  static Module *module(AKCSSMHandle id) { for(Module *p=modules;p;p=p->next) if(p->id==id)return p; return NULL; }
  static Context *context(AKCSSMHandle id) { for(Context *p=contexts;p;p=p->next) if(p->id==id)return p; return NULL; }
  static bool valid_guid(const AKCSSMGuid *g) { return g && !memcmp(g,&gGuidAppleCSP,sizeof *g); }
-@@ -125,5 +132,5 @@ static AKCSSMReturn crypt_data(AKCSSMHandle id,const AKCSSMData *input,uint32_t
+@@ -125,7 +132,7 @@ static AKCSSMReturn crypt_data(AKCSSMHandle id,const AKCSSMData *input,uint32_t
          else {memcpy(output->Data,scratch,n);output->Length=n;*actual=n;}
      }
      wipe(scratch,capacity);free(scratch);pthread_mutex_unlock(&lock);
@@ -61,3 +62,4 @@ diff --git a/translation/Security/LegacyCrypto.c b/translation/Security/LegacyCr
 +    if(operation==kCCDecrypt && trace_decrypt())fprintf(stderr,"[legacy-crypto] decrypt status=%d\n",status);
      return status;
  }
+ AKCSSMReturn CSSM_EncryptData(AKCSSMHandle c,const AKCSSMData *i,uint32_t ni,AKCSSMData *o,uint32_t no,size_t *n,AKCSSMData *r){return crypt_data(c,i,ni,o,no,n,r,kCCEncrypt);}

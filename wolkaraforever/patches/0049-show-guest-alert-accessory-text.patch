@@ -2,10 +2,12 @@
 # Without this minimal bridge a fatal startup dialog has only its title, which
 # hides the condition needed to diagnose it. A known damaged-installation
 # alert is handed to the launcher so it can offer the user a real repair path.
+diff --git a/translation/AppKit/Alerts.m b/translation/AppKit/Alerts.m
+index 6831c4b..8473c34 100644
 --- a/translation/AppKit/Alerts.m
 +++ b/translation/AppKit/Alerts.m
-@@ -1,17 +1,48 @@
- #import "AppKit.h"
+@@ -2,6 +2,35 @@
+ #import <dlfcn.h>
  // Alert configuration is a desktop model and may be built on a worker thread.
  // Only presentation creates UIKit objects, always on the main thread.
 +@interface NSTextView : AKStubObject
@@ -40,8 +42,7 @@
  @interface AKAlertButton : AKStubObject
  @property(copy) NSString *title, *keyEquivalent;
  @property BOOL enabled;
- @end
- @implementation AKAlertButton
+@@ -10,19 +39,36 @@
  @end
  @interface NSAlert : AKStubObject
  @property(copy) NSString *messageText, *informativeText;
@@ -53,7 +54,7 @@
  - (NSInteger)runModal;
  @end
  @implementation NSAlert { NSMutableArray<AKAlertButton *> *_buttons; }
-@@ -19,9 +50,24 @@
+ - (instancetype)init { if((self=[super init])) _buttons=[NSMutableArray new]; return self; }
  - (NSArray *)buttons { return _buttons; }
  - (id)addButtonWithTitle:(NSString *)title { AKAlertButton *button=[AKAlertButton new]; button.title=title; button.enabled=YES; [_buttons addObject:button]; return button; }
 +- (void)layout {}

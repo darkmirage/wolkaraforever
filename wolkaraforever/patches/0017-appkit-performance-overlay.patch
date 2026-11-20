@@ -15,8 +15,10 @@
 # Upstream: candidate (not submitted) - the host-view hook is the part upstream
 # might want, with the HUD itself living in the layer.
 #
---- a/translation/AppKit/AppKit.m	2026-10-21 16:25:07
-+++ b/translation/AppKit/AppKit.m	2026-10-21 16:25:07
+diff --git a/translation/AppKit/AppKit.m b/translation/AppKit/AppKit.m
+index a6b56af..c8cf233 100644
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
 @@ -3,6 +3,8 @@
  #import "Images.h"
  #import "TextInput.h"
@@ -26,7 +28,7 @@
  #import <GameController/GameController.h>
  #import <objc/message.h>
  #import <objc/runtime.h>
-@@ -281,6 +283,7 @@
+@@ -364,6 +366,7 @@ static BOOL AKWindowInputDiagnostics(void) {
  
  @implementation AKHostView { CGPoint _last; NSEventModifierFlags _mods; BOOL _pressedRight, _pressedLeft, _pointerInside, _softwareCursor; UIImageView *_cursorView; UIPointerInteraction *_pointer; UIPointerStyle *_gamePointerStyle; unsigned _hoverUpdates, _pointerUpdates, _cursorVisibilityReasons; NSTimeInterval _pointerReportTime; CGPoint _cursorHotSpot;
      AKTouchControls *_touchControls;
@@ -34,9 +36,9 @@
      BOOL _touchCursorActive, _touchCursorInitialized, _pressedMiddle;
      NSTimeInterval _lastTouchClickTime;
      CGPoint _lastTouchClickPoint;
-@@ -311,9 +314,26 @@
+@@ -418,9 +421,26 @@ static BOOL AKWindowInputDiagnostics(void) {
          // Optional on-screen keyboard and trackpad: on by default on iPhone,
-         // off on iPad, where they would cover part of the game.
+         // off on iPad, where their columns would take part of the screen.
          if (AKTouchControls.enabled) [self installTouchControls];
 +        // The optional performance HUD. It is attached here rather than to the
 +        // touch controls, so it also works on a device where those are off, and

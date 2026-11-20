@@ -20,9 +20,11 @@
 # Applies to: translation/AppKit/AppKit.m
 # Upstream: candidate.
 #
+diff --git a/translation/AppKit/AppKit.m b/translation/AppKit/AppKit.m
+index 96c1fd9..6528428 100644
 --- a/translation/AppKit/AppKit.m
 +++ b/translation/AppKit/AppKit.m
-@@ -767,7 +767,11 @@
+@@ -1253,7 +1253,11 @@ static void logLayer(CALayer *layer,unsigned depth) {
      [_contentView.layer removeFromSuperlayer];
      _contentView = v; v.window = self; v.nextResponder = self;
      if (!v.layer) v.wantsLayer = YES;
@@ -32,5 +34,5 @@
      if (_host) [self ak_attach];
 +    else if (v) v.frame = (NSRect){CGPointZero, _contentRect.size};
  }
- - (void)ak_attach {
-     [_host.layer addSublayer:_contentView.layer];
+ // The content view was given a layer after it had none.
+ - (void)ak_contentLayerChanged { if (_host && _contentView.layer && !_contentView.layer.superlayer) [self ak_attach]; }

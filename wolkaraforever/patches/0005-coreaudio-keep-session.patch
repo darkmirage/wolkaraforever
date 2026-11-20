@@ -7,14 +7,17 @@
 # Applies to: translation/CoreAudio/Hardware.m
 # Upstream: candidate (not submitted).
 #
+# Rebased onto Tolkara edc3628: upstream now imports SessionAudio.h and forward-declares
+# routeDevice() above outputName(); this hunk sits beside them, unchanged.
+#
 diff --git a/translation/CoreAudio/Hardware.m b/translation/CoreAudio/Hardware.m
-index 10de4b4..c7622b4 100644
+index a8d7451..b4e0926 100644
 --- a/translation/CoreAudio/Hardware.m
 +++ b/translation/CoreAudio/Hardware.m
-@@ -6,10 +6,40 @@
- typedef UInt32 AudioDeviceID;
+@@ -8,10 +8,40 @@ typedef UInt32 AudioDeviceID;
  typedef OSStatus (*HardwareListener)(UInt32,void *);
  static _Atomic(UInt32) defaultOutputDevice;
+ static AudioDeviceID routeDevice(void);
 +// The host owns the audio session. The adapter asks for the game's declared
 +// policy but never changes the category itself.
 +typedef BOOL (*TKWolkaraForeverPlaybackRequest)(void);

@@ -28,8 +28,12 @@
 # shrank the launcher itself.
 # Upstream: platform-specific by nature (UIScreen has no macOS equivalent).
 #
+# Rebased onto Tolkara edc3628: upstream now answers AKBackingScale(scale, nativeScale) (the
+# panel's whole native scale); this still answers the configured AKGuestBackingScale(),
+# default 1.0.
+#
 diff --git a/translation/AppKit/Screens.m b/translation/AppKit/Screens.m
-index cbda893..69dd499 100644
+index e2eaa7a..7bb3593 100644
 --- a/translation/AppKit/Screens.m
 +++ b/translation/AppKit/Screens.m
 @@ -1,4 +1,35 @@
@@ -68,11 +72,11 @@ index cbda893..69dd499 100644
  @implementation NSScreen
  + (NSScreen *)mainScreen { static NSScreen *s; static dispatch_once_t once; dispatch_once(&once, ^{s=[self new];}); return s; }
  + (NSArray *)screens { return @[self.mainScreen]; }
-@@ -8,7 +39,7 @@
+@@ -13,7 +44,7 @@
  - (NSRect)convertRectFromBacking:(NSRect)r { CGFloat f=self.backingScaleFactor; return CGRectMake(r.origin.x/f,r.origin.y/f,r.size.width/f,r.size.height/f); }
  - (NSRect)convertRectToBacking:(NSRect)r { CGFloat f=self.backingScaleFactor; return CGRectMake(r.origin.x*f,r.origin.y*f,r.size.width*f,r.size.height*f); }
  - (NSRect)visibleFrame { return self.frame; }
--- (CGFloat)backingScaleFactor { return UIScreen.mainScreen.nativeScale; }
+-- (CGFloat)backingScaleFactor { UIScreen *s=UIScreen.mainScreen; return AKBackingScale(s.scale, s.nativeScale); }
 +- (CGFloat)backingScaleFactor { return AKGuestBackingScale(); }
  - (NSDictionary *)deviceDescription { return @{@"NSScreenNumber":@1,@"NSDeviceSize":[NSValue valueWithCGSize:self.frame.size],@"NSDeviceResolution":[NSValue valueWithCGSize:CGSizeMake(72,72)],@"NSDeviceBitsPerSample":@8,@"NSDeviceColorSpaceName":@"NSCalibratedRGBColorSpace"}; }
  - (NSInteger)maximumFramesPerSecond { return UIScreen.mainScreen.maximumFramesPerSecond; }

@@ -11,16 +11,23 @@
 # Applies to: translation/AppKit/AppKit.m
 # Upstream: product-specific.
 #
+# Rebased onto Tolkara edc3628: upstream renamed the GCMouse move path to rawMouseMovedX:y:
+# (its raw pointer); the touchpad-active gate stays in front of it.
+#
+diff --git a/translation/AppKit/AppKit.m b/translation/AppKit/AppKit.m
+index eac24d5..a38fd8e 100644
 --- a/translation/AppKit/AppKit.m
 +++ b/translation/AppKit/AppKit.m
-@@ -298,5 +298,5 @@ static BOOL AKMobileInterface(void) {
+@@ -379,7 +379,7 @@ static BOOL AKMobileInterface(void) {
+ }
+ 
  @implementation AKHostView { CGPoint _last; NSEventModifierFlags _mods; BOOL _pressedRight, _pressedLeft, _pointerInside, _softwareCursor; UIImageView *_cursorView; UIPointerInteraction *_pointer; UIPointerStyle *_gamePointerStyle; unsigned _hoverUpdates, _pointerUpdates, _cursorVisibilityReasons; NSTimeInterval _pointerReportTime; CGPoint _cursorHotSpot;
 -    AKTouchControls *_touchControls;
 +    AKTouchControls *_touchControls; BOOL _controllerTouchpadActive;
      AKPerformanceOverlay *_performanceOverlay;
      BOOL _touchCursorActive, _touchCursorInitialized, _pressedMiddle;
      NSTimeInterval _lastTouchClickTime;
-@@ -347,6 +347,8 @@ static BOOL AKMobileInterface(void) {
+@@ -453,6 +453,8 @@ static BOOL AKMobileInterface(void) {
          [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(mouseConnected:) name:GCMouseDidConnectNotification object:nil];
          [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(captureChanged:) name:GCMouseDidDisconnectNotification object:nil];
          [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(lockChanged:) name:UIPointerLockStateDidChangeNotification object:nil];
@@ -29,8 +36,8 @@
          for(GCMouse *mouse in GCMouse.mice)[self installMouse:mouse];
          [self addGestureRecognizer:[[UIHoverGestureRecognizer alloc] initWithTarget:self action:@selector(hover:)]];
          // Optional on-screen keyboard and trackpad: on by default on iPhone,
-@@ -528,18 +530,30 @@ static BOOL AKMobileInterface(void) {
-     _last=CGPointMake(self.nsWindow.ak_mouseLocation.x,self.bounds.size.height-self.nsWindow.ak_mouseLocation.y);
+@@ -809,18 +811,30 @@ static BOOL AKMobileInterface(void) {
+     if(_cameraDragging)_cameraWarps++;
  }
  - (void)mouseConnected:(NSNotification *)notification { [self installMouse:notification.object]; [self captureChanged:nil]; }
 +// A DualSense/DualShock surface can be reported both through the configured controller
@@ -51,7 +58,7 @@
          (void)input; AKHostView *view=weakSelf;
 -        if(!view || !view.window.isKeyWindow || ![view usesRelativeMouse])return;
 +        if(!view || !view.window.isKeyWindow || view->_controllerTouchpadActive || ![view usesRelativeMouse])return;
-         [view postRelativeMouseX:dx y:dy];
+         [view rawMouseMovedX:dx y:dy];
      };
      mouse.mouseInput.leftButton.pressedChangedHandler=^(GCControllerButtonInput *button,float value,BOOL pressed) { (void)button;(void)value;[weakSelf rawButton:0 pressed:pressed]; };
      mouse.mouseInput.rightButton.pressedChangedHandler=^(GCControllerButtonInput *button,float value,BOOL pressed) { (void)button;(void)value;[weakSelf rawButton:1 pressed:pressed]; };
@@ -61,7 +68,7 @@
          NSEvent *event=[NSEvent new];event.window=view.nsWindow;event.type=NSEventTypeScrollWheel;
          event.locationInWindow=view.nsWindow.ak_mouseLocation;event.modifierFlags=view->_mods;
          // GCMouse reports the device's own direction. AppKit's deltas follow
-@@ -569,7 +583,7 @@ static BOOL AKMobileInterface(void) {
+@@ -859,7 +873,7 @@ static BOOL AKMobileInterface(void) {
      [NSApp postEvent:event atStart:NO];
  }
  - (void)rawButton:(NSInteger)button pressed:(BOOL)pressed {

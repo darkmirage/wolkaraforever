@@ -14,14 +14,18 @@
 # Applies to: translation/AppKit/AppKit.m
 # Upstream: candidate.
 #
+# Rebased onto Tolkara edc3628: replaces upstream's AKBackingScale() answer for NSWindow
+# rather than the old nativeScale one.
+#
 diff --git a/translation/AppKit/AppKit.m b/translation/AppKit/AppKit.m
-index 9c3ef9a..38a6d21 100644
+index bde7a2e..79427a3 100644
 --- a/translation/AppKit/AppKit.m
 +++ b/translation/AppKit/AppKit.m
-@@ -841,6 +841,6 @@ static void logLayer(CALayer *layer,unsigned depth) {
+@@ -1211,7 +1211,7 @@ static void logLayer(CALayer *layer,unsigned depth) {
+ }
  - (void)setFrame:(NSRect)frame display:(BOOL)display { [self setFrame:frame display:display animate:NO]; }
  - (NSRect)frame { return _host ? (CGRect){CGPointZero, _host.bounds.size} : _contentRect; }
--- (CGFloat)backingScaleFactor { return (_uiWindow.screen ?: UIScreen.mainScreen).nativeScale; }
+-- (CGFloat)backingScaleFactor { UIScreen *s = _uiWindow.screen ?: UIScreen.mainScreen; return AKBackingScale(s.scale, s.nativeScale); }
 +- (CGFloat)backingScaleFactor { return AKGuestBackingScale(); }
  - (BOOL)isKeyWindow { return _uiWindow.isKeyWindow; }
  - (BOOL)isVisible { return _uiWindow && !_uiWindow.hidden; }

@@ -12,8 +12,12 @@
 # Applies to: translation/CoreGraphics/Displays.m
 # Upstream: candidate.
 #
+# Rebased onto Tolkara edc3628: upstream's mode() now uses displayBounds() (the game area
+# less the on-screen controls' columns) and whole pixels (lround); kept, with the scale
+# taken from guestBackingScale().
+#
 diff --git a/translation/CoreGraphics/Displays.m b/translation/CoreGraphics/Displays.m
-index f373183..a9c1299 100644
+index cedef75..70a2f69 100644
 --- a/translation/CoreGraphics/Displays.m
 +++ b/translation/CoreGraphics/Displays.m
 @@ -2,6 +2,21 @@
@@ -38,11 +42,14 @@ index f373183..a9c1299 100644
  bool CGCursorIsVisible(void) { return !AKCursorIsHidden(); }
  CGError CGAssociateMouseAndMouseCursorPosition(boolean_t connected) { AKMouseSetCaptured(!connected); return kCGErrorSuccess; }
  CGError CGWarpMouseCursorPosition(CGPoint point) {
-@@ -13,6 +28,6 @@ typedef uint32_t CGDirectDisplayID;
+@@ -17,8 +32,8 @@ static CGRect displayBounds(void) {
+ }
  typedef CFDictionaryRef CGDisplayModeRef;
  typedef void (*DisplayCallback)(CGDirectDisplayID, uint32_t, void *);
--static NSDictionary *mode(void) { UIScreen *s=UIScreen.mainScreen; return @{@"width":@(s.bounds.size.width),@"height":@(s.bounds.size.height),@"pixelWidth":@(s.bounds.size.width*s.nativeScale),@"pixelHeight":@(s.bounds.size.height*s.nativeScale),@"refresh":@(s.maximumFramesPerSecond)}; }
-+static NSDictionary *mode(void) { UIScreen *s=UIScreen.mainScreen; CGFloat scale=guestBackingScale(); return @{@"width":@(s.bounds.size.width),@"height":@(s.bounds.size.height),@"pixelWidth":@(s.bounds.size.width*scale),@"pixelHeight":@(s.bounds.size.height*scale),@"refresh":@(s.maximumFramesPerSecond)}; }
+-// Whole pixels at the whole backing scale the guest is told (AKBackingScale).
+-static NSDictionary *mode(void) { UIScreen *s=UIScreen.mainScreen; CGSize b=displayBounds().size; double f=AKBackingScale(s.scale,s.nativeScale); return @{@"width":@(b.width),@"height":@(b.height),@"pixelWidth":@(lround(b.width*f)),@"pixelHeight":@(lround(b.height*f)),@"refresh":@(s.maximumFramesPerSecond)}; }
++// Whole pixels at the backing scale the guest is told (guestBackingScale).
++static NSDictionary *mode(void) { UIScreen *s=UIScreen.mainScreen; CGSize b=displayBounds().size; CGFloat scale=guestBackingScale(); return @{@"width":@(b.width),@"height":@(b.height),@"pixelWidth":@(lround(b.width*scale)),@"pixelHeight":@(lround(b.height*scale)),@"refresh":@(s.maximumFramesPerSecond)}; }
  CGDirectDisplayID CGMainDisplayID(void) { return 1; }
  CGError CGGetActiveDisplayList(uint32_t capacity,CGDirectDisplayID *displays,uint32_t *count) {
      if (!count || (capacity && !displays)) return kCGErrorIllegalArgument;

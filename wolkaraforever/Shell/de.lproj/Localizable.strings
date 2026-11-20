@@ -851,7 +851,7 @@
 "login.status.off" = "Aus";
 "login.status.on" = "An";
 "login.title" = "Battle.net-Anmeldung (experimentell)";
-"login.explanation" = "Experimentelle Kompatibilitätsfunktion. Dies ist nicht der normale Anmeldeweg von WolkaraForever. Passwort und Authenticator bleiben auf der offiziellen Battle.net-Website; der Launcher speichert keine Browsersitzung und kein Startticket. Nutzung auf eigenes Risiko.";
+"login.explanation" = "Experimentelle Kompatibilitätsfunktion. Dies ist nicht der normale Anmeldeweg von WolkaraForever. Passwort und Authenticator bleiben auf der offiziellen Battle.net-Website; der Launcher speichert kein Startticket und die Browsersitzung nur, wenn du „Angemeldet bleiben“ einschaltest. Nutzung auf eigenes Risiko.";
 "login.enable" = "Experimentelle Anmeldung aktivieren";
 "login.disable" = "Experimentelle Anmeldung deaktivieren";
 "login.clear" = "Anmeldedaten löschen";
@@ -859,5 +859,10 @@
 "login.enable.message" = "Diese optionale Funktion übergibt ein einmaliges Anmeldeergebnis nur beim Drücken von Spielen an Forever. Sie kann ohne Vorwarnung nicht mehr funktionieren. Sie ersetzt nicht die normale Anmeldung im Spiel. Nutzung auf eigenes Risiko.";
 "login.enable.confirm" = "Ich verstehe — aktivieren";
 "login.cleared.title" = "Anmeldedaten gelöscht";
-"login.cleared.message" = "Die Browser-Sitzung im Speicher und jedes ausstehende Startticket wurden entfernt.";
+"login.cleared.message" = "Die Browser-Sitzung (im Speicher und gespeichert) und jedes ausstehende Startticket wurden entfernt.";
 "login.failed" = "Die Anmeldung wurde nicht abgeschlossen. Abbrechen und erneut versuchen.";
+"login.stay.on" = "Angemeldet bleiben";
+"login.stay.off" = "Nicht mehr angemeldet bleiben";
+"login.stay.title" = "Angemeldet bleiben?";
+"login.stay.message" = "Deine Battle.net-Websitzung wird auf diesem Gerät gespeichert, damit „Spielen“ ohne Passwort anmelden kann. Wer dieses Gerät oder seine App-Daten nutzen kann, könnte das Spiel als du starten. Schalte es aus oder nutze „Anmeldedaten löschen“, um sie zu entfernen.";
+"login.stay.confirm" = "Angemeldet bleiben";

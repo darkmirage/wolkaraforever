@@ -208,6 +208,7 @@ def main():
         "overlay.thermal.fair.detail": "Warm is the German word",
         "touch.gamepad.button": "a German player says Controller too",
         "home.launcher.interfaceMode.ipados": "the device's own name, and the same word",
+        "row.edition": "Edition is what Blizzard's German client calls it",
         "home.launcher.interfaceMode.ios": "the device's own name, and the same word in every language",
         "home.launcher.interfaceMode.iosduo": "the device's own name, and the same words in every language",
         "addons.bundled.detail": "Version and SHA-256 are the same words in both",

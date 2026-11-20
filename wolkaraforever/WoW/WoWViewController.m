@@ -7,6 +7,7 @@
 #import "../Voice/ControllerTouchpadViewController.h"
 #import "../App/WolkaraForeverLog.h"
 #import "../App/WolkaraForeverTheme.h"
+#import "LauncherList.h"
 #import "../App/WKLocalization.h"
 #import "Installation.h"
 #import "DeviceProfile.h"
@@ -95,68 +96,6 @@ static dispatch_queue_t TKForeverUIQueue(void) {
 static NSString *const TKForeverLayoutKey = @"WolkaraForeverTouchLayoutV1";
 static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidChange";
 
-
-// A settings row that reads as a switch, not as a command: the words stay the
-// same and the control says whether it is on. iOS draws the switch; the row only
-// supplies the label and the state.
-@interface TKWoWSwitchRow : UIView
-@property(nonatomic, readonly) UILabel *titleLabel;
-@property(nonatomic, readonly) UISwitch *toggle;
-@property(nonatomic, getter=isEnabled) BOOL enabled;
-- (instancetype)initWithTitle:(NSString *)title identifier:(NSString *)identifier
-                       target:(id)target action:(SEL)action;
-// The words are fixed and the control says the state, so a language change rewrites both
-// the label and the switch's own accessibility label with it.
-- (void)applyTitle:(NSString *)title;
-@end
-@implementation TKWoWSwitchRow
-- (instancetype)initWithTitle:(NSString *)title identifier:(NSString *)identifier
-                       target:(id)target action:(SEL)action {
-    if ((self=[super initWithFrame:CGRectZero])) {
-        self.accessibilityIdentifier=identifier;
-        _titleLabel=Label(17,UIFontWeightRegular,UIColor.whiteColor);
-        _titleLabel.text=title;
-        _titleLabel.accessibilityIdentifier=[identifier stringByAppendingString:@".label"];
-        _titleLabel.isAccessibilityElement=NO;
-        [_titleLabel setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
-        _toggle=[UISwitch new];
-        _toggle.onTintColor=WKGold();
-        _toggle.accessibilityLabel=title;
-        _toggle.accessibilityIdentifier=[identifier stringByAppendingString:@".switch"];
-        [_toggle addTarget:target action:action forControlEvents:UIControlEventValueChanged];
-        [_toggle setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
-        [_toggle setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
-        UIStackView *row=[[UIStackView alloc] initWithArrangedSubviews:@[_titleLabel,_toggle]];
-        row.axis=UILayoutConstraintAxisHorizontal;
-        row.alignment=UIStackViewAlignmentCenter;
-        row.translatesAutoresizingMaskIntoConstraints=NO;
-        [self addSubview:row];
-        [NSLayoutConstraint activateConstraints:@[
-            // The same 12-point inset the button rows use, so the switch lines up
-            // with their text.
-            [row.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:12],
-            [row.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-12],
-            [row.topAnchor constraintEqualToAnchor:self.topAnchor],
-            [row.bottomAnchor constraintEqualToAnchor:self.bottomAnchor],
-            [self.heightAnchor constraintGreaterThanOrEqualToConstant:38],
-        ]];
-    }
-    return self;
-}
-- (void)setEnabled:(BOOL)enabled {
-    _enabled=enabled;
-    _toggle.enabled=enabled;
-    // The label follows the row, and the control only shows its own off/on
-    // colour: no alpha on the row, which used to make an enabled switch look
-    // the same as a disabled one. Gold is what every other usable row uses, so
-    // an on/off row reads like the buttons above and below it.
-    _titleLabel.textColor=enabled?WKGold():WKDisabled();
-}
-- (void)applyTitle:(NSString *)title {
-    _titleLabel.text=title;
-    _toggle.accessibilityLabel=title;
-}
-@end
 
 @interface TKWoWViewController () <UIDocumentPickerDelegate>
 - (BOOL)inFront;
@@ -260,22 +199,24 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     uint64_t _updateDone, _updateTotal;
     double _downloadMBps;
     UIProgressView *_progressBar;
-    CAGradientLayer *_background;
-    UIStackView *_columns;
     NSLayoutConstraint *_markWidth;
-    UIStackView *_gridRow1, *_gridRow2, *_gridRow3, *_topRow;
+    UIStackView *_topRow;
     UILabel *_stateLabel, *_detailLabel, *_versionLabel;
-    UIButton *_editionButton, *_preferencesButton, *_languageButton, *_browserLoginButton, *_addonsButton, *_addonsDirectoryButton,
-        *_voiceButton, *_touchpadButton, *_permissionsButton, *_primaryButton,
+    UIButton *_primaryButton, *_editionTitleButton;
+    TKListRow *_editionButton, *_preferencesButton, *_languageButton, *_browserLoginButton, *_addonsButton, *_addonsDirectoryButton,
+        *_voiceButton, *_touchpadButton, *_permissionsButton,
         *_macEverButton, *_backupButton, *_resetButton, *_restoreButton, *_settingsFolderButton,
         *_renderProfileButton, *_deviceProfileButton, *_interfaceModeButton,
         *_addonsBackupButton, *_addonsRestoreButton,
-        *_layoutCreateButton, *_layoutRestoreButton, *_layoutBackupButton;
-    // The section headings, by their box's identifier, so a language change can rewrite
-    // them where they were made instead of rebuilding the page.
-    NSMutableDictionary<NSString *, UILabel *> *_headings;
-    TKWoWSwitchRow *_gamepadRow, *_overlayRow, *_soundRow;
-    UIButton *_interfaceSetupButton;
+        *_layoutCreateButton, *_layoutRestoreButton, *_layoutBackupButton, *_interfaceSetupButton,
+        *_repairRow, *_diagnosticsRow, *_developerRow, *_aboutRow,
+        *_playControlsRow, *_playAddonsRow, *_playGraphicsRow;
+    // The sections, by identifier, so a language change can rewrite their headers and footers
+    // where they were made instead of rebuilding the page.
+    NSMutableDictionary<NSString *, TKListSection *> *_sections;
+    TKListSwitchRow *_gamepadRow, *_overlayRow, *_soundRow;
+    UITabBarController *_tabs;
+    TKLauncherPage *_playPage, *_addonsPage, *_controlsPage, *_settingsPage;
     // Set while the layout-import picker is up, so a document chosen there is read as a layout
     // backup and never mistaken for the UI restore's snapshot.
     BOOL _layoutImportPending;
@@ -303,62 +244,19 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [button addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
     return button;
 }
-// The page's own section heading: the small uppercase label the edition line
-// always used, now naming each group of rows.
-- (UILabel *)heading:(NSString *)text {
-    UILabel *label=Label(17,UIFontWeightSemibold,WKMuted());
-    label.text=text.uppercaseString;
-    return label;
-}
-// One section, in its own box: the heading and its rows share a panel with the
-// page's own border and fill, so the eye can find a group without a long column
-// of loose rows. The heading's words come from -localize, which is also what a
-// language change runs, so the heading follows the app language like every other
-// label on the page.
-- (UIView *)sectionBoxWithIdentifier:(NSString *)identifier rows:(NSArray<UIView *> *)rows {
-    UIView *box=[UIView new];
-    box.accessibilityIdentifier=identifier;
-    box.translatesAutoresizingMaskIntoConstraints=NO;
-    box.backgroundColor=WKGrouped();
-    box.layer.cornerRadius=14;
-    box.layer.borderWidth=1;
-    box.layer.borderColor=[WKGold() colorWithAlphaComponent:0.18].CGColor;
-    UILabel *heading=[self heading:@""];
-    heading.accessibilityIdentifier=[identifier stringByReplacingOccurrencesOfString:@"wow.box."
-                                                                          withString:@"wow.heading."];
-    if (!_headings) _headings=[NSMutableDictionary new];
-    _headings[identifier]=heading;
-    UIStackView *stack=Stack([@[heading] arrayByAddingObjectsFromArray:rows],8);
-    stack.translatesAutoresizingMaskIntoConstraints=NO;
-    [box addSubview:stack];
-    // The rows decide the card's height. There used to be a flexible spacer at the foot of this
-    // stack, added so that a card stretched to match a taller neighbour kept its rows together at
-    // the top; that reserved blank space at the bottom of every card even when nothing needed it.
-    // The same result now comes from the bottom constraint: it is satisfied exactly while the
-    // card is its natural height, and gives way (priority 250) when a two-column row stretches
-    // the card, which leaves the rows where they were - at the top.
-    NSLayoutConstraint *exact=[stack.bottomAnchor constraintEqualToAnchor:box.bottomAnchor constant:-14];
-    exact.priority=250;
-    [NSLayoutConstraint activateConstraints:@[
-        [stack.topAnchor constraintEqualToAnchor:box.topAnchor constant:14],
-        [stack.leadingAnchor constraintEqualToAnchor:box.leadingAnchor constant:16],
-        [stack.trailingAnchor constraintEqualToAnchor:box.trailingAnchor constant:-16],
-        [stack.bottomAnchor constraintLessThanOrEqualToAnchor:box.bottomAnchor constant:-14],
-        exact,
-    ]];
-    return box;
-}
-// Two boxes side by side on a wide screen, stacked when there is no room.
-- (UIStackView *)boxRow:(NSArray<UIView *> *)boxes {
-    UIStackView *row=[[UIStackView alloc] initWithArrangedSubviews:boxes];
-    row.axis=UILayoutConstraintAxisHorizontal;
-    row.distribution=UIStackViewDistributionFillEqually;
-    row.alignment=UIStackViewAlignmentFill;
-    row.spacing=16;
+- (TKListRow *)row:(NSString *)identifier symbol:(NSString *)symbol tint:(TKListTint)tint action:(SEL)action {
+    TKListRow *row=[[TKListRow alloc] initWithIdentifier:identifier symbol:symbol tint:tint];
+    [row addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
     return row;
 }
-// The cell beside a card that has no neighbour: nothing, but the same width, so the page keeps
-// its grid instead of stretching one card across the column and reading as a footer.
+// One inset-grouped section. Its header and footer words come from -localize, which is also what
+// a language change runs, so they follow the app language like every other label on the page.
+- (TKListSection *)section:(NSString *)identifier rows:(NSArray<UIView *> *)rows {
+    TKListSection *section=[[TKListSection alloc] initWithIdentifier:identifier rows:rows];
+    if (!_sections) _sections=[NSMutableDictionary new];
+    _sections[identifier]=section;
+    return section;
+}
 // The layer's mark, where the wordmark used to sit. It is drawn at the top
 // row's width, so it grows and shrinks with the window, with one cap: it may
 // never take more than a fifth of the height, so the boxes below it always have
@@ -405,101 +303,91 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [self migratePhoneRenderProfile];
     self.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;
     self.view.backgroundColor=WKInk();
-    _background=[CAGradientLayer layer];
-    _background.colors=@[(id)WKInkTop().CGColor,
-        (id)WKInkBottom().CGColor];
-    _background.startPoint=CGPointMake(0,0); _background.endPoint=CGPointMake(1,1);
-    [self.view.layer insertSublayer:_background atIndex:0];
-    self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"gearshape"]
-        style:UIBarButtonItemStylePlain target:self action:@selector(settings)];
-    self.navigationItem.rightBarButtonItem.accessibilityIdentifier=@"wow.settings";
     _refreshItem=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.clockwise"]
         style:UIBarButtonItemStylePlain target:self action:@selector(refresh)];
     _refreshItem.accessibilityIdentifier=@"wow.refresh";
-    self.navigationItem.leftBarButtonItem=_refreshItem;
 
-    // Identity and the play surface share the top of the page; the four
-    // sections sit in boxes underneath both, so the whole page fits without
-    // scrolling on an iPad instead of a column that has to be scrolled.
+    // Every row is the same live control it has always been - its identifier, its action and
+    // the render pass that sets its words and its enabled state are unchanged. What changed is
+    // where it lives: four tabs of inset-grouped lists instead of six cards on one page.
     _markView=[self markView];
-    _editionButton=[self button:@"wow.edition" action:@selector(chooseEdition)];
-    _preferencesButton=[self button:@"wow.preferences" action:@selector(preferences)];
+    _editionButton=[self row:@"wow.edition" symbol:@"sparkles" tint:TKListTintGold action:@selector(chooseEdition)];
+    _editionButton.accessory=TKListAccessoryChoices;
+    _preferencesButton=[self row:@"wow.preferences" symbol:@"globe" tint:TKListTintBlue action:@selector(preferences)];
+    _preferencesButton.accessory=TKListAccessoryChoices;
     // The app's own language, beside the game's. Separate rows on purpose: one changes
     // WolkaraForever's labels, the other changes what World of Warcraft downloads, and a
     // single row for both would be the exact confusion this page has to avoid.
-    _languageButton=[self button:@"wow.language" action:@selector(chooseAppLanguage)];
-    _browserLoginButton=[self button:@"wow.browserLogin" action:@selector(browserLoginSettings)];
-    _addonsButton=[self button:@"wow.addons.manage" action:@selector(manageAddons)];
-    // Mac-Ever is a Forever-compatible add-on that is downloaded from CurseForge
-    // by the person using Safari, then installed with the row above. No scrape,
-    // no embedded download URL, and opening the page is not an installation.
+    _languageButton=[self row:@"wow.language" symbol:@"character.bubble" tint:TKListTintIndigo action:@selector(chooseAppLanguage)];
+    _languageButton.accessory=TKListAccessoryChoices;
+    _browserLoginButton=[self row:@"wow.browserLogin" symbol:@"person.crop.circle" tint:TKListTintBlue action:@selector(browserLoginSettings)];
+    _addonsButton=[self row:@"wow.addons.manage" symbol:@"puzzlepiece.extension" tint:TKListTintIndigo action:@selector(manageAddons)];
     // The recommended add-ons for the chosen interface. The row opens the Add-On Manager,
     // where the package is chosen and installed explicitly; it never installs silently.
-    _macEverButton=[self button:@"wow.addons.macEver" action:@selector(openRecommendedAddons)];
-    _addonsDirectoryButton=[self button:@"wow.addons.directory" action:@selector(openAddonDirectory)];
+    _macEverButton=[self row:@"wow.addons.macEver" symbol:@"star" tint:TKListTintGold action:@selector(openRecommendedAddons)];
+    _addonsDirectoryButton=[self row:@"wow.addons.directory" symbol:@"folder" tint:TKListTintBlue action:@selector(openAddonDirectory)];
+    _addonsDirectoryButton.accessory=TKListAccessoryExternal;
     // The whole add-on folder, in one ZIP and back again. Two rows and nothing else: there is
     // no list to keep in step, no check that runs while the page is open, and no state that can
     // sit at "updating" - a backup is made when this row is pressed and a restore happens when
     // that one is.
-    _addonsBackupButton=[self button:@"wow.addons.backup" action:@selector(backupAddons)];
-    _addonsRestoreButton=[self button:@"wow.addons.restore" action:@selector(restoreAddons)];
+    _addonsBackupButton=[self row:@"wow.addons.backup" symbol:@"square.and.arrow.up" tint:TKListTintGreen action:@selector(backupAddons)];
+    _addonsBackupButton.accessory=TKListAccessoryNone;
+    _addonsRestoreButton=[self row:@"wow.addons.restore" symbol:@"square.and.arrow.down" tint:TKListTintOrange action:@selector(restoreAddons)];
+    _addonsRestoreButton.accessory=TKListAccessoryNone;
     // Straight to this app's own page in Settings, which is where the Microphone and Speech Recognition
     // switches live. Available before the game is installed, because it is a setting and not a game
     // action - and it is the only place those switches can be changed.
-    _permissionsButton=[self button:@"wow.permissions" action:@selector(openPermissions)];
-    _voiceButton=[self button:@"wow.voice" action:@selector(manageVoice)];
-    _touchpadButton=[self button:@"wow.touchpad" action:@selector(configureTouchpad)];
-    _backupButton=[self button:@"wow.performance.backup" action:@selector(backupUI)];
-    _resetButton=[self button:@"wow.performance.reset" action:@selector(resetGraphics)];
-    _restoreButton=[self button:@"wow.performance.restore" action:@selector(restoreUI)];
-    _gamepadRow=[[TKWoWSwitchRow alloc] initWithTitle:@"" identifier:@"wow.performance.gamepad"
-        target:self action:@selector(gamepadChanged:)];
-    _overlayRow=[[TKWoWSwitchRow alloc] initWithTitle:@"" identifier:@"wow.performance.overlay"
-        target:self action:@selector(overlayChanged:)];
-    _renderProfileButton=[self button:@"wow.performance.renderProfile" action:@selector(chooseRenderProfile)];
-    _deviceProfileButton=[self button:@"wow.performance.deviceProfile" action:@selector(chooseDeviceProfile)];
+    _permissionsButton=[self row:@"wow.permissions" symbol:@"mic" tint:TKListTintRed action:@selector(openPermissions)];
+    _permissionsButton.accessory=TKListAccessoryExternal;
+    _voiceButton=[self row:@"wow.voice" symbol:@"waveform" tint:TKListTintPink action:@selector(manageVoice)];
+    _touchpadButton=[self row:@"wow.touchpad" symbol:@"hand.point.up.left" tint:TKListTintTeal action:@selector(configureTouchpad)];
+    _backupButton=[self row:@"wow.performance.backup" symbol:@"square.and.arrow.up" tint:TKListTintGreen action:@selector(backupUI)];
+    _backupButton.accessory=TKListAccessoryNone;
+    _resetButton=[self row:@"wow.performance.reset" symbol:@"arrow.uturn.backward" tint:TKListTintRed action:@selector(resetGraphics)];
+    _resetButton.accessory=TKListAccessoryNone;
+    _resetButton.destructive=YES;
+    _restoreButton=[self row:@"wow.performance.restore" symbol:@"square.and.arrow.down" tint:TKListTintOrange action:@selector(restoreUI)];
+    _restoreButton.accessory=TKListAccessoryNone;
+    _gamepadRow=[[TKListSwitchRow alloc] initWithIdentifier:@"wow.performance.gamepad" symbol:@"gamecontroller"
+        tint:TKListTintIndigo target:self action:@selector(gamepadChanged:)];
+    _overlayRow=[[TKListSwitchRow alloc] initWithIdentifier:@"wow.performance.overlay" symbol:@"chart.bar"
+        tint:TKListTintTeal target:self action:@selector(overlayChanged:)];
+    _renderProfileButton=[self row:@"wow.performance.renderProfile" symbol:@"speedometer" tint:TKListTintOrange action:@selector(chooseRenderProfile)];
+    _renderProfileButton.accessory=TKListAccessoryChoices;
+    _deviceProfileButton=[self row:@"wow.performance.deviceProfile" symbol:@"iphone" tint:TKListTintGray action:@selector(chooseDeviceProfile)];
+    _deviceProfileButton.accessory=TKListAccessoryChoices;
     // Battery-saving sound (patch 0065): the game's sound without iOS's HAL, whose Bluetooth plug-in took a quarter of a
     // core on the iPad. On by default; off is the old path, for audio problems. Both audio adapters read it at the game's
     // first sound call (AKAudioModel.h).
-    _soundRow=[[TKWoWSwitchRow alloc] initWithTitle:@"" identifier:@"wow.performance.audioAvoidHAL"
-        target:self action:@selector(soundPathChanged:)];
-    _settingsFolderButton=[self button:@"wow.performance.settingsFolder" action:@selector(openSettingsFolder)];
+    _soundRow=[[TKListSwitchRow alloc] initWithIdentifier:@"wow.performance.audioAvoidHAL" symbol:@"speaker.wave.2"
+        tint:TKListTintGreen target:self action:@selector(soundPathChanged:)];
+    _settingsFolderButton=[self row:@"wow.performance.settingsFolder" symbol:@"folder" tint:TKListTintBlue action:@selector(openSettingsFolder)];
+    _settingsFolderButton.accessory=TKListAccessoryExternal;
     // The interface this launcher drives. One setting, one row: it writes the single key the
     // guest reads and never touches an installed package.
-    _interfaceModeButton=[self button:@"wow.launcher.interfaceMode" action:@selector(chooseInterfaceMode)];
+    _interfaceModeButton=[self row:@"wow.launcher.interfaceMode" symbol:@"rectangle.on.rectangle" tint:TKListTintGold action:@selector(chooseInterfaceMode)];
+    _interfaceModeButton.accessory=TKListAccessoryChoices;
     // The arrangement the on-screen controls use, as four rows instead of one sheet with
     // everything behind it: make one from a starting point, change the one in use, put a saved
     // one back, or keep a copy of it outside the app. All of it is data the layout owns.
-    _layoutCreateButton=[self button:@"wow.launcher.layoutCreate" action:@selector(createInterfaceSetup)];
-    _interfaceSetupButton=[self button:@"wow.launcher.interfaceSetup" action:@selector(chooseInterfaceSetup)];
-    _layoutRestoreButton=[self button:@"wow.launcher.layoutRestore" action:@selector(restoreInterfaceSetup)];
-    _layoutBackupButton=[self button:@"wow.launcher.layoutBackup" action:@selector(backupInterfaceSetup)];
-
-    // Five sections, as boxes, in the order they are read. The compatibility note belongs to
-    // the edition it is about, so it lives in that box rather than loose on the page. The
-    // render and overlay choices are their own card, beside the game-file tools rather than
-    // mixed into them: one group changes how this app draws, the other edits the game's own
-    // files, and keeping them apart is what makes either safe to press. Every word in them
-    // comes from -localize, below, which is also what a language change runs.
-    UIView *editionBox=[self sectionBoxWithIdentifier:@"wow.box.edition"
-        rows:@[_editionButton,_preferencesButton,_languageButton,_browserLoginButton]];
-    UIView *addonsBox=[self sectionBoxWithIdentifier:@"wow.box.addons"
-        rows:@[_addonsButton,_addonsDirectoryButton,_addonsBackupButton,_addonsRestoreButton]];
-    UIView *voiceBox=[self sectionBoxWithIdentifier:@"wow.box.voice"
-        rows:@[_permissionsButton,_voiceButton,_touchpadButton]];
-    UIView *profileBox=[self sectionBoxWithIdentifier:@"wow.box.profile"
-        rows:@[_deviceProfileButton,_renderProfileButton,_soundRow,_overlayRow]];
-    // The gamepad switch is the first decision in the UI card: it changes whether the game
-    // exposes its controller interface. Backup precedes Restore because restore replaces data.
-    UIView *performanceBox=[self sectionBoxWithIdentifier:@"wow.box.performance"
-        rows:@[_gamepadRow,_backupButton,_restoreButton,_resetButton,_settingsFolderButton]];
-    // The sixth card, in the cell that used to be the grid's spacer: the interface mode, and
-    // the one place the recommendation row's own card sends a person to install it. It sits
-    // beside UI Manager on a wide page and after it on a narrow one, and it changes no other
-    // card's width, inset or order.
-    UIView *launcherManagerBox=[self sectionBoxWithIdentifier:@"wow.box.launcherManager"
-        rows:@[_interfaceModeButton, _layoutCreateButton, _interfaceSetupButton,
-               _layoutRestoreButton, _layoutBackupButton]];
+    _layoutCreateButton=[self row:@"wow.launcher.layoutCreate" symbol:@"plus.rectangle.on.rectangle" tint:TKListTintBlue action:@selector(createInterfaceSetup)];
+    _interfaceSetupButton=[self row:@"wow.launcher.interfaceSetup" symbol:@"slider.horizontal.3" tint:TKListTintIndigo action:@selector(chooseInterfaceSetup)];
+    _layoutRestoreButton=[self row:@"wow.launcher.layoutRestore" symbol:@"square.and.arrow.down" tint:TKListTintOrange action:@selector(restoreInterfaceSetup)];
+    _layoutRestoreButton.accessory=TKListAccessoryNone;
+    _layoutBackupButton=[self row:@"wow.launcher.layoutBackup" symbol:@"square.and.arrow.up" tint:TKListTintGreen action:@selector(backupInterfaceSetup)];
+    _layoutBackupButton.accessory=TKListAccessoryNone;
+    // What used to be the gear's action sheet, as rows: the two developer switches and the
+    // technical details are one level further down, where an ordinary visit never meets them.
+    _repairRow=[self row:@"wow.settings.repair" symbol:@"checkmark.shield" tint:TKListTintGreen action:@selector(repairInstallation)];
+    _repairRow.accessory=TKListAccessoryNone;
+    _diagnosticsRow=[self row:@"wow.settings.diagnostics" symbol:@"doc.text.magnifyingglass" tint:TKListTintGray action:@selector(diagnostics)];
+    _developerRow=[self row:@"wow.settings.developer" symbol:@"hammer" tint:TKListTintGray action:@selector(developerOptions)];
+    _aboutRow=[self row:@"wow.settings.about" symbol:@"info.circle" tint:TKListTintGray action:@selector(about)];
+    // The Play tab's shortcuts: one line each for the three places a person goes before a game.
+    _playControlsRow=[self row:@"wow.play.controls" symbol:@"gamecontroller" tint:TKListTintGold action:@selector(showControlsTab)];
+    _playAddonsRow=[self row:@"wow.play.addons" symbol:@"puzzlepiece.extension" tint:TKListTintIndigo action:@selector(showAddonsTab)];
+    _playGraphicsRow=[self row:@"wow.play.graphics" symbol:@"speedometer" tint:TKListTintOrange action:@selector(showSettingsTab)];
 
     _activity=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     _activity.color=WKGold(); _activity.hidesWhenStopped=YES;
@@ -521,52 +409,99 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIStackView *status=Stack(@[stateRow,_detailLabel,_progressBar,_launchProgress,_versionLabel,_diagnosticsButton],10);
     status.layoutMargins=UIEdgeInsetsMake(20,20,20,20); status.layoutMarginsRelativeArrangement=YES;
     status.backgroundColor=WKElevated();
-    status.layer.cornerRadius=16; status.layer.borderWidth=1;
-    status.layer.borderColor=[WKGold() colorWithAlphaComponent:0.24].CGColor;
+    status.layer.cornerRadius=16; status.layer.cornerCurve=kCACornerCurveContinuous;
     _primaryButton=[self button:@"wow.primary" action:@selector(primaryAction)];
     [_primaryButton.heightAnchor constraintGreaterThanOrEqualToConstant:52].active=YES;
-    _updatesLabel=Label(17,UIFontWeightRegular,WKMuted()); _updatesLabel.accessibilityIdentifier=@"wow.updates";
+    _updatesLabel=Label(15,UIFontWeightRegular,WKMuted()); _updatesLabel.accessibilityIdentifier=@"wow.updates";
     // Exactly one supporting line below Play in the idle state. The startup note that used to
     // sit under it was a second line of passive copy on a page whose own status panel already
     // says how starting works; it is gone rather than hidden, so nothing reserves space for it.
     UIStackView *right=Stack(@[status,_primaryButton,_updatesLabel],12);
-    // The top of the page: the mark on the left, what the launcher is doing and
-    // the Play button on the right. The boxes go underneath both.
+    // The top of the Play tab: the mark on the left, what the launcher is doing and the Play
+    // button on the right, side by side when there is room and stacked when there is not.
     UIStackView *top=[[UIStackView alloc] initWithArrangedSubviews:@[_markView,right]];
     top.axis=UILayoutConstraintAxisHorizontal; top.spacing=28; top.alignment=UIStackViewAlignmentTop;
     top.accessibilityIdentifier=@"wow.top";
     _topRow=top;
     _markWidth=[_markView.widthAnchor constraintEqualToAnchor:top.widthAnchor multiplier:0.30];
     _markWidth.active=YES;
-    _gridRow1=[self boxRow:@[editionBox,addonsBox]];
-    _gridRow2=[self boxRow:@[voiceBox,profileBox]];
-    // The fifth and sixth cards share the last row. The sixth used to be an empty cell whose
-    // only job was to keep the fifth card the same width as the ones above it; now it holds
-    // the Launcher Manager, so the same geometry carries a card instead of a blank.
-    _gridRow3=[self boxRow:@[performanceBox,launcherManagerBox]];
-    UIStackView *grid=Stack(@[_gridRow1,_gridRow2,_gridRow3],16);
-    grid.accessibilityIdentifier=@"wow.grid";
-    // The recommended-add-ons control is retained but not part of any card. It is given no
-    // place on the page; it exists so its action stays reachable, which is what the tests and
-    // the Add-on Manager's own Browse tab use.
-    [self.view addSubview:_macEverButton];
-    _columns=Stack(@[top,grid],20); _columns.accessibilityIdentifier=@"wow.columns";
-    _columns.alignment=UIStackViewAlignmentFill;
 
-    UIScrollView *scroll=[UIScrollView new]; scroll.accessibilityIdentifier=@"wow.scroll";
-    scroll.translatesAutoresizingMaskIntoConstraints=NO; [self.view addSubview:scroll];
-    _columns.translatesAutoresizingMaskIntoConstraints=NO; [scroll addSubview:_columns];
-    [NSLayoutConstraint activateConstraints:@[
-        [scroll.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
-        [scroll.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor],
-        [scroll.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor],
-        [scroll.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor],
-        [_columns.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:16],
-        [_columns.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-20],
-        [_columns.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor constant:24],
-        [_columns.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-24],
-        [_columns.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-48]
-    ]];
+    _playPage=[[TKLauncherPage alloc] initWithIdentifier:@"wow.page.play"];
+    _playPage.showsGradient=YES;
+    _playPage.readableWidth=1000;
+    [_playPage addArrangedView:top];
+    [_playPage addArrangedView:[self section:@"wow.section.play" rows:@[_playControlsRow,_playAddonsRow,_playGraphicsRow]]];
+    __weak TKWoWViewController *weakSelf=self;
+    _playPage.didLayout=^(TKLauncherPage *page) { (void)page; [weakSelf arrangePlayPage]; };
+    _playPage.navigationItem.rightBarButtonItem=_refreshItem;
+    _playPage.navigationItem.largeTitleDisplayMode=UINavigationItemLargeTitleDisplayModeNever;
+    // The edition is the Play tab's title, and pressing it offers the others.
+    _editionTitleButton=[UIButton buttonWithType:UIButtonTypeSystem];
+    _editionTitleButton.accessibilityIdentifier=@"wow.play.edition";
+    [_editionTitleButton addTarget:self action:@selector(chooseEditionFromTitle) forControlEvents:UIControlEventTouchUpInside];
+    _playPage.navigationItem.titleView=_editionTitleButton;
+    UIRefreshControl *pull=[UIRefreshControl new];
+    pull.tintColor=WKGold();
+    [pull addTarget:self action:@selector(pulledToRefresh:) forControlEvents:UIControlEventValueChanged];
+    _playPage.scrollView.refreshControl=pull;
+    // The mark may never take more than a fifth of the page's height, so the status and the
+    // Play button below it always have room. Both ends are on the Play page, so the cap can be
+    // switched on now and stays valid whichever tab is showing.
+    if (_markCap) {
+        _markCap=[_markView.heightAnchor constraintLessThanOrEqualToAnchor:_playPage.view.heightAnchor multiplier:0.20];
+        _markCap.active=YES;
+    }
+
+    _addonsPage=[[TKLauncherPage alloc] initWithIdentifier:@"wow.page.addons"];
+    [_addonsPage addArrangedView:[self section:@"wow.section.addons" rows:@[_addonsButton]]];
+    [_addonsPage addArrangedView:[self section:@"wow.section.addonsFolder"
+        rows:@[_addonsDirectoryButton,_addonsBackupButton,_addonsRestoreButton]]];
+    // The recommendation row is no longer offered on its own: the Add-on Manager's Browse tab
+    // reaches it. The control is still built and wired, held out of sight, because the route it
+    // opens is real and the page's own tests exercise it.
+    [_addonsPage.view addSubview:_macEverButton];
+
+    _controlsPage=[[TKLauncherPage alloc] initWithIdentifier:@"wow.page.controls"];
+    [_controlsPage addArrangedView:[self section:@"wow.section.interface" rows:@[_interfaceModeButton]]];
+    [_controlsPage addArrangedView:[self section:@"wow.section.onscreen" rows:@[_gamepadRow]]];
+    [_controlsPage addArrangedView:[self section:@"wow.section.layout"
+        rows:@[_layoutCreateButton,_interfaceSetupButton,_layoutRestoreButton,_layoutBackupButton]]];
+    [_controlsPage addArrangedView:[self section:@"wow.section.input" rows:@[_touchpadButton,_voiceButton,_permissionsButton]]];
+
+    _settingsPage=[[TKLauncherPage alloc] initWithIdentifier:@"wow.page.settings"];
+    [_settingsPage addArrangedView:[self section:@"wow.section.game"
+        rows:@[_editionButton,_preferencesButton,_browserLoginButton]]];
+    [_settingsPage addArrangedView:[self section:@"wow.section.app" rows:@[_languageButton]]];
+    [_settingsPage addArrangedView:[self section:@"wow.section.graphics"
+        rows:@[_deviceProfileButton,_renderProfileButton,_soundRow,_overlayRow]]];
+    // Backup precedes Restore because restore replaces data, and the reset is last and red.
+    [_settingsPage addArrangedView:[self section:@"wow.section.gameInterface"
+        rows:@[_backupButton,_restoreButton,_settingsFolderButton,_resetButton]]];
+    [_settingsPage addArrangedView:[self section:@"wow.section.support"
+        rows:@[_repairRow,_diagnosticsRow,_developerRow,_aboutRow]]];
+
+    NSMutableArray<UINavigationController *> *frames=[NSMutableArray new];
+    NSArray *tabs=@[@[_playPage,@"play",@"play.fill"],@[_addonsPage,@"puzzlepiece.extension",@"puzzlepiece.extension.fill"],
+                    @[_controlsPage,@"gamecontroller",@"gamecontroller.fill"],@[_settingsPage,@"gearshape",@"gearshape.fill"]];
+    for (NSArray *tab in tabs) {
+        TKLauncherPage *page=tab[0];
+        UINavigationController *frame=[[UINavigationController alloc] initWithRootViewController:page];
+        frame.navigationBar.prefersLargeTitles=YES;
+        frame.navigationBar.tintColor=WKGold();
+        frame.tabBarItem=[[UITabBarItem alloc] initWithTitle:@"" image:[UIImage systemImageNamed:tab[1]]
+            selectedImage:[UIImage systemImageNamed:tab[2]]];
+        frame.tabBarItem.accessibilityIdentifier=[page.view.accessibilityIdentifier
+            stringByReplacingOccurrencesOfString:@"wow.page." withString:@"wow.tab."];
+        [frames addObject:frame];
+    }
+    _tabs=[UITabBarController new];
+    _tabs.viewControllers=frames;
+    _tabs.tabBar.tintColor=WKGold();
+    [self addChildViewController:_tabs];
+    _tabs.view.frame=self.view.bounds;
+    _tabs.view.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
+    [self.view addSubview:_tabs.view];
+    [_tabs didMoveToParentViewController:self];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(foreground:)
         name:UIApplicationDidBecomeActiveNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(inactive:)
@@ -584,40 +519,93 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    UINavigationBarAppearance *appearance=[UINavigationBarAppearance new]; [appearance configureWithOpaqueBackground];
-    appearance.backgroundColor=WKInk();
-    appearance.titleTextAttributes=@{NSForegroundColorAttributeName:WKGold()};
-    self.navigationItem.standardAppearance=appearance; self.navigationItem.scrollEdgeAppearance=appearance;
-    self.navigationItem.compactAppearance=appearance;
-    self.navigationController.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;
-    self.navigationController.navigationBar.prefersLargeTitles=NO;
-    self.navigationItem.largeTitleDisplayMode=UINavigationItemLargeTitleDisplayModeNever;
+    // Each tab draws its own bar. The scene's navigation controller still holds this page, so a
+    // page the scene pushes over it (diagnostics, the guest) has a bar to come back from.
+    [self.navigationController setNavigationBarHidden:YES animated:animated];
     self.navigationController.navigationBar.tintColor=WKGold();
+}
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    [self.navigationController setNavigationBarHidden:NO animated:animated];
+}
+// The mark sits beside the status when the Play tab has room for two columns. Stacked, the
+// status takes the full width and the mark goes above it, so the Play button is never squeezed.
+// Decided from the page's own width, after the page lays out: the container is laid out before
+// its tabs are, and asked then it would answer for a page with no size yet.
+- (void)arrangePlayPage {
+    CGFloat width=_playPage.view.bounds.size.width;
+    if (width<1) return;
+    // A phone on its side is short rather than wide: stacked, the mark and the status would push
+    // Play below the fold, so a compact height puts them side by side at phone widths too.
+    BOOL shortPage=_playPage.traitCollection.verticalSizeClass==UIUserInterfaceSizeClassCompact;
+    BOOL horizontal=(width>=700 || (shortPage && width>=480)) &&
+        !UIContentSizeCategoryIsAccessibilityCategory(self.traitCollection.preferredContentSizeCategory);
+    UILayoutConstraintAxis axis=horizontal?UILayoutConstraintAxisHorizontal:UILayoutConstraintAxisVertical;
+    UIStackViewAlignment alignment=horizontal?UIStackViewAlignmentTop:UIStackViewAlignmentFill;
+    if (_topRow.axis==axis && _topRow.alignment==alignment && _markWidth.active==horizontal) return;
+    _topRow.axis=axis;
+    _topRow.alignment=alignment;
+    _markWidth.active=horizontal;
 }
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    _background.frame=self.view.bounds;
-    // The mark's height cap was made in -markView, before the picture had a
-    // superview. Now it does, so the two ends have an ancestor and it can be
-    // switched on; once only, because switching it on lays out again.
-    if (_markCap && !_markCap.active) _markCap.active=YES;
-    BOOL horizontal=self.view.bounds.size.width>=700 && !UIContentSizeCategoryIsAccessibilityCategory(self.traitCollection.preferredContentSizeCategory);
-    // Two boxes side by side when there is room, one column otherwise - which is the iPhone in
-    // portrait, and an iPad at the largest text sizes. The page itself is always a single
-    // vertical column, and the boxes keep their order however they are laid out.
-    for (UIStackView *row in @[_gridRow1,_gridRow2,_gridRow3]) {
-        row.axis=horizontal?UILayoutConstraintAxisHorizontal:UILayoutConstraintAxisVertical;
-        row.distribution=horizontal?UIStackViewDistributionFillEqually:UIStackViewDistributionFill;
-    }
-    // The mark sits beside the status when there are two columns to fill. Stacked, the status
-    // takes the full width and the mark goes above it, so the Play button is never squeezed.
-    _topRow.axis=horizontal?UILayoutConstraintAxisHorizontal:UILayoutConstraintAxisVertical;
-    _markWidth.active=horizontal;
     if (_renderProfileButton && [self thisDeviceProfile].family==TKDeviceFamilyPhone) {
-        NSString *title=WKLocalizedFormat(@"home.performance.renderProfile",[self renderProfileDescription]);
-        if (![_renderProfileButton.configuration.title isEqual:title])
-            [self configureButton:_renderProfileButton title:title filled:NO];
+        NSString *value=[self renderProfileDescription];
+        if (![_renderProfileButton.value isEqual:value]) { _renderProfileButton.value=value; _playGraphicsRow.value=value; }
     }
+}
+// The page's own tabs, and the views in them. A fixture and the in-app self-test look rows up by
+// identifier, and a tab that is not showing has no window, so they search these and bring the
+// row's tab forward before pressing it.
+- (NSArray<UIView *> *)pageViews {
+    [self loadViewIfNeeded];
+    return @[_playPage.view,_addonsPage.view,_controlsPage.view,_settingsPage.view];
+}
+- (void)revealView:(UIView *)view {
+    [self loadViewIfNeeded];
+    NSArray<UIView *> *pages=[self pageViews];
+    for (NSUInteger index=0; index<pages.count; index++) {
+        if (![view isDescendantOfView:pages[index]]) continue;
+        if (_tabs.selectedIndex!=index) _tabs.selectedIndex=index;
+        [_tabs.view layoutIfNeeded];
+        UIScrollView *scroll=((TKLauncherPage *)((UINavigationController *)_tabs.viewControllers[index]).viewControllers.firstObject).scrollView;
+        CGRect frame=[view convertRect:view.bounds toView:scroll];
+        [scroll scrollRectToVisible:CGRectInset(frame,0,-24) animated:NO];
+        return;
+    }
+}
+- (void)selectTab:(NSUInteger)index {
+    [self loadViewIfNeeded];
+    _tabs.selectedIndex=index;
+}
+- (NSUInteger)selectedTab { return _tabs.selectedIndex; }
+- (void)showAddonsTab { [self selectTab:1]; }
+- (void)showControlsTab { [self selectTab:2]; }
+- (void)showSettingsTab { [self selectTab:3]; }
+- (void)chooseEditionFromTitle { [self chooseEditionAnchoredAt:_editionTitleButton]; }
+// The Play tab's title: the edition, with the chevron that says it can be changed.
+- (void)renderEditionTitle {
+    UIButtonConfiguration *configuration=UIButtonConfiguration.plainButtonConfiguration;
+    configuration.title=_product[@"name"];
+    configuration.image=[UIImage systemImageNamed:@"chevron.down"
+        withConfiguration:[UIImageSymbolConfiguration configurationWithTextStyle:UIFontTextStyleFootnote scale:UIImageSymbolScaleSmall]];
+    configuration.imagePlacement=NSDirectionalRectEdgeTrailing;
+    configuration.imagePadding=5;
+    configuration.baseForegroundColor=WKText();
+    configuration.titleTextAttributesTransformer=^NSDictionary *(NSDictionary *attributes) {
+        NSMutableDictionary *changed=[attributes mutableCopy];
+        changed[NSFontAttributeName]=WKFont(UIFontTextStyleHeadline, UIFontWeightSemibold);
+        return changed;
+    };
+    _editionTitleButton.configuration=configuration;
+    _editionTitleButton.accessibilityLabel=WKLocalized(@"row.edition");
+    _editionTitleButton.accessibilityValue=_product[@"name"];
+    _editionTitleButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
+    [_editionTitleButton sizeToFit];
+}
+- (void)pulledToRefresh:(UIRefreshControl *)control {
+    [control endRefreshing];
+    if (_refreshItem.enabled) [self refresh];
 }
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
@@ -857,13 +845,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     button.configuration=configuration;
     [button setTitle:title forState:UIControlStateNormal];
 }
-// Disabled rows use one explicit grey rather than the system's dimming, so a
-// starting page, a session page and an ended session all read the same.
-- (void)stylePlainButton:(UIButton *)button {
-    UIButtonConfiguration *configuration=button.configuration;
-    configuration.baseForegroundColor=button.enabled?WKGold():WKDisabled();
-    button.configuration=configuration;
-}
 - (void)stylePrimaryButton {
     UIButtonConfiguration *configuration=_primaryButton.configuration;
     BOOL enabled=_primaryButton.enabled;
@@ -882,19 +863,61 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 - (void)localize {
     WKLocalization *localization=WKLocalization.shared;
     WKLog("language", @"home: drawing the page in %@ (%@)", localization.languageCode, localization.settingDisplayName);
-    self.navigationItem.rightBarButtonItem.accessibilityLabel=WKLocalized(@"home.settings");
-    self.navigationItem.backButtonTitle=WKLocalized(@"common.back");
     _refreshItem.accessibilityLabel=WKLocalized(@"home.refresh");
-    _headings[@"wow.box.edition"].text=WKLocalized(@"home.box.edition").uppercaseString;
-    _headings[@"wow.box.addons"].text=WKLocalized(@"home.box.addons").uppercaseString;
-    _headings[@"wow.box.voice"].text=WKLocalized(@"home.box.voice").uppercaseString;
-    _headings[@"wow.box.profile"].text=WKLocalized(@"home.box.profile").uppercaseString;
-    _headings[@"wow.box.performance"].text=WKLocalized(@"home.box.performance").uppercaseString;
-    _headings[@"wow.box.launcherManager"].text=WKLocalized(@"home.box.launcherManager").uppercaseString;
+    NSArray<NSString *> *tabTitles=@[@"tab.play",@"tab.addons",@"tab.controls",@"tab.settings"];
+    NSArray<TKLauncherPage *> *pages=@[_playPage,_addonsPage,_controlsPage,_settingsPage];
+    for (NSUInteger index=0; index<pages.count; index++) {
+        NSString *title=WKLocalized(tabTitles[index]);
+        pages[index].navigationController.tabBarItem.title=title;
+        pages[index].navigationItem.backButtonTitle=WKLocalized(@"common.back");
+        if (pages[index]!=_playPage) pages[index].navigationItem.title=title;
+    }
+    NSDictionary<NSString *, NSArray<NSString *> *> *sections=@{
+        @"wow.section.addons":@[@"section.addons"],
+        @"wow.section.addonsFolder":@[@"section.addonsFolder",@"section.addonsFolder.footer"],
+        @"wow.section.interface":@[@"section.interface",@"section.interface.footer"],
+        @"wow.section.onscreen":@[@"section.onscreen"],
+        @"wow.section.layout":@[@"section.layout"],
+        @"wow.section.input":@[@"section.input"],
+        @"wow.section.game":@[@"section.game"],
+        @"wow.section.app":@[@"section.app"],
+        @"wow.section.graphics":@[@"section.graphics"],
+        @"wow.section.gameInterface":@[@"section.gameInterface",@"section.gameInterface.footer"],
+        @"wow.section.support":@[@"section.support"],
+    };
+    [sections enumerateKeysAndObjectsUsingBlock:^(NSString *identifier, NSArray<NSString *> *keys, BOOL *stop) {
+        (void)stop;
+        self->_sections[identifier].headerLabel.text=WKLocalized(keys[0]);
+        if (keys.count>1) self->_sections[identifier].footerLabel.text=WKLocalized(keys[1]);
+    }];
+    // The words on a row are fixed; what a row is set to is its value, and -render owns that.
+    NSDictionary<NSString *, NSString *> *titles=@{
+        @"wow.edition":@"row.edition", @"wow.preferences":@"row.region", @"wow.language":@"row.appLanguage",
+        @"wow.browserLogin":@"row.battlenet", @"wow.addons.manage":@"row.addons.manage",
+        @"wow.addons.macEver":@"row.addons.recommended", @"wow.addons.directory":@"row.addons.folder",
+        @"wow.addons.backup":@"row.addons.backup", @"wow.addons.restore":@"row.addons.restore",
+        @"wow.permissions":@"row.permissions", @"wow.voice":@"row.voice", @"wow.touchpad":@"row.touchpad",
+        @"wow.performance.backup":@"row.interface.backup", @"wow.performance.restore":@"row.interface.restore",
+        @"wow.performance.reset":@"row.interface.reset", @"wow.performance.settingsFolder":@"home.performance.settingsFolder",
+        @"wow.performance.renderProfile":@"row.render", @"wow.performance.deviceProfile":@"row.device",
+        @"wow.launcher.interfaceMode":@"home.launcher.interfaceMode.title",
+        @"wow.launcher.layoutCreate":@"row.layout.create", @"wow.launcher.interfaceSetup":@"row.layout.edit",
+        @"wow.launcher.layoutRestore":@"row.layout.restore", @"wow.launcher.layoutBackup":@"row.layout.backup",
+        @"wow.settings.repair":@"row.repair", @"wow.settings.diagnostics":@"row.diagnostics",
+        @"wow.settings.developer":@"row.developer", @"wow.settings.about":@"row.about",
+        @"wow.play.controls":@"tab.controls", @"wow.play.addons":@"tab.addons", @"wow.play.graphics":@"row.graphics",
+    };
+    for (TKListRow *row in @[_editionButton,_preferencesButton,_languageButton,_browserLoginButton,_addonsButton,
+                             _macEverButton,_addonsDirectoryButton,_addonsBackupButton,_addonsRestoreButton,
+                             _permissionsButton,_voiceButton,_touchpadButton,_backupButton,_restoreButton,_resetButton,
+                             _settingsFolderButton,_renderProfileButton,_deviceProfileButton,_interfaceModeButton,
+                             _layoutCreateButton,_interfaceSetupButton,_layoutRestoreButton,_layoutBackupButton,
+                             _repairRow,_diagnosticsRow,_developerRow,_aboutRow,
+                             _playControlsRow,_playAddonsRow,_playGraphicsRow])
+        row.title=WKLocalized(titles[row.accessibilityIdentifier]);
     [_gamepadRow applyTitle:WKLocalized(@"home.performance.gamepad")];
     [_overlayRow applyTitle:WKLocalized(@"home.performance.overlay")];
     [_soundRow applyTitle:WKLocalized(@"home.performance.audioAvoidHAL")];
-    _browserLoginButton.accessibilityLabel=WKLocalized(@"login.row");
     [_diagnosticsButton setTitle:WKLocalized(@"home.diagnostics") forState:UIControlStateNormal];
     _updatesLabel.text=WKLocalized(@"home.updates.note");
     // A VoiceOver reader is told the language of the words it is about to read, so a German
@@ -962,61 +985,39 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)render {
     if (!self.isViewLoaded) return;
-    [self configureButton:_editionButton title:WKLocalizedFormat(@"home.edition.row",_product[@"name"]) filled:NO];
-    _editionButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    _editionButton.backgroundColor=WKWash(); _editionButton.layer.cornerRadius=10;
-    // Region and locale in one row, in the shape the request asked for: a prefix a reader can
-    // scan, then the two values. No centred dot and no bare "EU · English".
-    [self configureButton:_preferencesButton title:WKLocalizedFormat(@"home.preferences.row",_region.uppercaseString,TKWoWLocaleName(_locale)) filled:NO];
-    _preferencesButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    // The app's own language. It reads in the same shape as the row above so the two are
-    // seen as the two settings they are, and it says which language is in use rather than
-    // which of the three choices was made - the sheet says that.
-    [self configureButton:_languageButton title:WKLocalizedFormat(@"lang.row",WKLocalization.shared.settingDisplayName) filled:NO];
-    _languageButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    [self configureButton:_addonsButton title:_installation.app?WKLocalized(@"home.addons.install"):WKLocalized(@"home.addons.install.needsgame") filled:NO];
-    _addonsButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    _addonsButton.enabled=_installation.app && !_busy && !_starting && !_running && !_sessionUsed;
-    // The recommendation row keeps its identifier and changes only its words and its
-    // destination. It opens the Add-On Manager, which is where installing is explicit:
-    // pressing this row never installs, disables, removes or updates anything by itself.
-    // The recommendation row is no longer drawn on the front page: the Add-on Manager's own
-    // Browse tab reaches it, and this card is for the rows a person actually uses day to day.
-    // The control is still built and still wired, held off the card and out of sight, because
-    // the route it opens is real and the page's own tests exercise it - the page simply does
-    // not offer it here any more.
-    [self configureButton:_macEverButton
-        title:WKLocalized(@"home.addons.recommended.wolkaraRoue") filled:NO];
-    _macEverButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    BOOL idle=!_busy && !_starting && !_running && !_sessionUsed;
+    _editionButton.value=_product[@"name"];
+    _editionButton.enabled=idle;
+    [self renderEditionTitle];
+    // Region and the game's language, the two things that decide what World of Warcraft downloads.
+    _preferencesButton.value=[NSString stringWithFormat:@"%@ · %@",_region.uppercaseString,TKWoWLocaleName(_locale)];
+    _preferencesButton.enabled=idle;
+    // The app's own language, saying which language is in use rather than which of the choices
+    // was made - the sheet says that.
+    _languageButton.value=WKLocalization.shared.settingDisplayName;
+    _languageButton.enabled=idle;
+    BOOL addonsReady=_installation.app && idle;
+    _addonsButton.enabled=addonsReady;
+    // The recommendation row keeps its identifier and changes only its destination. It opens the
+    // Add-On Manager, which is where installing is explicit: pressing it never installs,
+    // disables, removes or updates anything by itself. It is held out of sight; see -viewDidLoad.
+    _macEverButton.value=@"WolkaraRoue";
     _macEverButton.enabled=!_starting && !_running && !_sessionUsed;
     _macEverButton.hidden=YES;
     _macEverButton.accessibilityElementsHidden=YES;
     _macEverButton.userInteractionEnabled=NO;
-    [self configureButton:_addonsDirectoryButton title:_installation.app?WKLocalized(@"home.addons.directory"):WKLocalized(@"home.addons.directory.needsgame") filled:NO];
-    _addonsDirectoryButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    _addonsDirectoryButton.enabled=_addonsButton.enabled;
+    _addonsDirectoryButton.enabled=addonsReady;
     // Backup and Restore hold the whole add-on folder, so they need the same idle page the
     // rows above do - and Restore additionally waits for any other game-file operation, because
     // it replaces the folder.
-    [self configureButton:_addonsBackupButton
-        title:_installation.app?WKLocalized(@"home.addons.backup"):WKLocalized(@"home.addons.backup.needsgame") filled:NO];
-    _addonsBackupButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    _addonsBackupButton.enabled=_addonsButton.enabled && !_uiOperation;
-    [self configureButton:_addonsRestoreButton
-        title:_installation.app?WKLocalized(@"home.addons.restore"):WKLocalized(@"home.addons.restore.needsgame") filled:NO];
-    _addonsRestoreButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
+    _addonsBackupButton.enabled=addonsReady && !_uiOperation;
     _addonsRestoreButton.enabled=_addonsBackupButton.enabled;
-    [self configureButton:_voiceButton title:WKLocalized(@"home.voice.keys") filled:NO];
-    _voiceButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    // Available before the game is installed: it is a setting, not a game action.
-    _voiceButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
-    [self configureButton:_touchpadButton title:WKLocalized(@"home.touchpad.configuration") filled:NO];
-    _touchpadButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    _touchpadButton.enabled=_voiceButton.enabled;
-    [self configureButton:_permissionsButton title:WKLocalized(@"home.permissions") filled:NO];
-    _permissionsButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    // Navigation to Settings is available whenever the page is usable; a
-    // starting or ended session greys it with the rest so no gold text is left.
+    _sections[@"wow.section.addons"].footerLabel.text=_installation.app?nil:WKLocalized(@"section.addons.needsGame");
+    // Available before the game is installed: these are settings, not game actions.
+    _voiceButton.enabled=idle;
+    _touchpadButton.enabled=idle;
+    // Navigation to Settings is available whenever the page is usable; a starting or ended
+    // session greys it with the rest.
     _permissionsButton.enabled=!_starting && !_running && !_sessionUsed;
     // Performance & UI Manager. The Forever file rows need a ready Forever
     // installation - and the selected edition must be Forever, because they must
@@ -1024,78 +1025,53 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // session, and no other UI operation in flight. The overlay is a
     // WolkaraForever runtime feature and follows the launcher's non-busy rule.
     NSString *foreverDirectory=[self foreverWorkingDirectory];
-    BOOL foreverReady=foreverDirectory && !_busy && !_starting && !_running && !_sessionUsed && !_uiOperation;
+    BOOL foreverReady=foreverDirectory && idle && !_uiOperation;
     // Do not redraw the switch back to its old Config.wtf value while its write is in flight.
     // That made a successful tap visibly undo itself, despite the later write succeeding.
     if (!_gamepadChangePending)
         _gamepadEnabled=foreverDirectory?[TKForeverUI gamepadEnabledInWorkingDirectory:foreverDirectory]:NO;
     NSDictionary *layout=[NSUserDefaults.standardUserDefaults objectForKey:TKForeverLayoutKey];
     _overlayEnabled=[layout isKindOfClass:NSDictionary.class] && [layout[@"performanceOverlayEnabled"] boolValue];
-    for (UIButton *button in @[_backupButton,_resetButton,_restoreButton,_settingsFolderButton]) {
-        button.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-        button.enabled=foreverReady;
-    }
-    [self configureButton:_backupButton title:WKLocalized(@"home.performance.backup") filled:NO];
-    [self configureButton:_resetButton title:WKLocalized(@"home.performance.reset") filled:NO];
-    [self configureButton:_restoreButton title:WKLocalized(@"home.performance.restore") filled:NO];
-    [self configureButton:_settingsFolderButton title:WKLocalized(@"home.performance.settingsFolder") filled:NO];
-    // The Launcher Manager's one row: which interface the guest runs. It is a setting, so it
-    // follows the page's idle rule, and choosing a mode writes the one key the guest reads -
-    // never a package, a file or an installation.
+    for (TKListRow *row in @[_backupButton,_resetButton,_restoreButton,_settingsFolderButton]) row.enabled=foreverReady;
+    // Which interface the guest runs. It is a setting, so it follows the page's idle rule, and
+    // choosing a mode writes the one key the guest reads - never a package, a file or an
+    // installation.
     NSString *interfaceMode=InterfaceModeLabel(AKInterfaceModeName());
     if (AKInterfaceModeIsAutomatic())
         interfaceMode=WKLocalizedFormat(@"home.launcher.interfaceMode.auto.value", interfaceMode);
-    [self configureButton:_interfaceModeButton
-        title:WKLocalizedFormat(@"home.launcher.interfaceMode.row", interfaceMode) filled:NO];
-    _interfaceModeButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    _interfaceModeButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
-    [self configureButton:_interfaceSetupButton
-        title:WKLocalized(@"home.launcher.interfaceSetup.row") filled:NO];
-    _interfaceSetupButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    _interfaceSetupButton.enabled=_interfaceModeButton.enabled;
-    // The other three rows of the same subject: make one, put one back, keep a copy. They are
-    // separate rows because they are separate decisions - the sheet they used to share made a
-    // person read eleven actions to find the four they came for.
-    [self configureButton:_layoutCreateButton title:WKLocalized(@"home.launcher.layout.create") filled:NO];
-    _layoutCreateButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    _layoutCreateButton.enabled=_interfaceModeButton.enabled;
-    [self configureButton:_layoutRestoreButton title:WKLocalized(@"home.launcher.layout.restore") filled:NO];
-    _layoutRestoreButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    _layoutRestoreButton.enabled=_interfaceModeButton.enabled;
-    [self configureButton:_layoutBackupButton title:WKLocalized(@"home.launcher.layout.backup") filled:NO];
-    _layoutBackupButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    _layoutBackupButton.enabled=_interfaceModeButton.enabled;
-    // Switches, not changing commands: the label is fixed and the control shows
-    // the state.
+    _interfaceModeButton.value=interfaceMode;
+    _interfaceModeButton.enabled=idle;
+    _playControlsRow.value=interfaceMode;
+    // The other rows of the same subject: make one, change the one in use, put one back, keep a
+    // copy. They are separate rows because they are separate decisions.
+    for (TKListRow *row in @[_interfaceSetupButton,_layoutCreateButton,_layoutRestoreButton,_layoutBackupButton])
+        row.enabled=idle;
+    // Switches, not changing commands: the label is fixed and the control shows the state.
     _gamepadRow.enabled=foreverReady;
     _gamepadRow.toggle.on=_gamepadEnabled;
-    _overlayRow.enabled=!_busy && !_starting && !_running && !_sessionUsed;
+    _overlayRow.enabled=idle;
     _overlayRow.toggle.on=_overlayEnabled;
-    // The profile card. None of these rows read or write the game's files: they are Forever's
-    // own render scale, which is why they are their own card beside the game-file tools.
-    BOOL preferencesIdle=!_busy && !_starting && !_running && !_sessionUsed;
-    NSString *deviceValue=[self deviceProfileIsThisDevice]
+    // Graphics & Power. None of these rows read or write the game's files: they are Forever's
+    // own render scale, which is why they sit apart from the game-file tools.
+    _deviceProfileButton.value=[self deviceProfileIsThisDevice]
         ? WKLocalizedFormat(@"home.profile.automaticRow",[self deviceProfileName])
         : WKLocalizedFormat(@"home.profile.overrideRow",[self deviceProfileName]);
-    [self configureButton:_deviceProfileButton title:WKLocalizedFormat(@"home.performance.deviceProfile",deviceValue) filled:NO];
-    _deviceProfileButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    _deviceProfileButton.enabled=preferencesIdle;
-    [self configureButton:_renderProfileButton title:WKLocalizedFormat(@"home.performance.renderProfile",[self renderProfileDescription]) filled:NO];
-    _renderProfileButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    _renderProfileButton.enabled=preferencesIdle;
-    _soundRow.enabled=preferencesIdle;
+    _deviceProfileButton.enabled=idle;
+    _renderProfileButton.value=[self renderProfileDescription];
+    _renderProfileButton.enabled=idle;
+    _playGraphicsRow.value=_renderProfileButton.value;
+    _soundRow.enabled=idle;
     _soundRow.toggle.on=AKAudioAvoidHALIn(NSUserDefaults.standardUserDefaults);
-    _editionButton.enabled=!_busy && !_starting && !_running && !_sessionUsed;
-    _preferencesButton.enabled=_editionButton.enabled;
-    _languageButton.enabled=_editionButton.enabled;
-    BOOL browserLoginAvailable=_editionButton.enabled && [_product[@"id"] isEqual:TKForeverUIEdition];
-    [self configureButton:_browserLoginButton title:WKLocalizedFormat(@"login.row",
-        WKLocalized([NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"] ? @"login.status.on" : @"login.status.off")) filled:NO];
-    _browserLoginButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    _browserLoginButton.enabled=browserLoginAvailable;
-    self.navigationItem.rightBarButtonItem.enabled=!_updating && !_starting && !_running;
+    _browserLoginButton.value=WKLocalized([NSUserDefaults.standardUserDefaults boolForKey:@"WoWBrowserLogin"] ? @"login.status.on" : @"login.status.off");
+    _browserLoginButton.enabled=idle && [_product[@"id"] isEqual:TKForeverUIEdition];
+    // Support. Repair needs a game to repair and a page that is not already busy with one.
+    _repairRow.enabled=!_busy && !_starting && !_sessionUsed && _installation.app;
     _primaryButton.hidden=_starting || _running;
-    _updatesLabel.hidden=_starting || _running;
+    // The note about keeping the app open is for a download that is running or about to: on a
+    // ready game, a running one, or an ended session it is a sentence about nothing.
+    BOOL downloadAhead=_busy || _resumeCheck || _installation.state==TKWoWInstallationMissing ||
+        _installation.state==TKWoWInstallationOutdated || _installation.state==TKWoWInstallationNeedsRepair;
+    _updatesLabel.hidden=_starting || _running || _sessionUsed || !downloadAhead;
     _progressBar.hidden=!_updating || !_updateTotal;
     _progressBar.progress=_updateTotal?(float)((double)_updateDone/_updateTotal):0;
     NSString *title=nil, *detail=nil, *action=nil;
@@ -1201,12 +1177,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _stateLabel.text=title; _detailLabel.text=detail;
     [self configureButton:_primaryButton title:action filled:YES]; _primaryButton.enabled=enabled;
     _refreshItem.enabled=!_busy && !_sessionUsed && !_starting && !_running;
-    for (UIButton *button in @[_editionButton,_preferencesButton,_addonsButton,_macEverButton,_addonsDirectoryButton,
-                                _addonsBackupButton,_addonsRestoreButton,
-                                _permissionsButton,_voiceButton,_touchpadButton,_backupButton,_resetButton,
-                                _restoreButton,_settingsFolderButton,_interfaceModeButton,
-                                _layoutCreateButton,_interfaceSetupButton,_layoutRestoreButton,_layoutBackupButton])
-        [self stylePlainButton:button];
     [self stylePrimaryButton];
     _diagnosticsButton.tintColor=_diagnosticsButton.enabled?WKGold():WKDisabled();
     if (_busy) [_activity startAnimating]; else [_activity stopAnimating];
@@ -1245,17 +1215,27 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     if (cancellable)
         [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"common.cancel") style:UIAlertActionStyleCancel handler:nil]];
     WKPresentWhenFree(self, ^{
-        if (anchor) { sheet.popoverPresentationController.sourceView=anchor; sheet.popoverPresentationController.sourceRect=anchor.bounds; }
-        else sheet.popoverPresentationController.barButtonItem=self.navigationItem.rightBarButtonItem;
+        // A row on a tab that is not showing has no window to point at; the sheet then comes from
+        // the middle of the page rather than from nowhere.
+        UIView *source=anchor.window?anchor:self.view;
+        sheet.popoverPresentationController.sourceView=source;
+        sheet.popoverPresentationController.sourceRect=anchor.window?anchor.bounds:
+            CGRectMake(CGRectGetMidX(source.bounds),CGRectGetMidY(source.bounds),1,1);
+        if (!anchor.window) sheet.popoverPresentationController.permittedArrowDirections=0;
         [self presentViewController:sheet animated:YES completion:nil];
     });
 }
-- (void)chooseEdition {
+- (void)chooseEdition { [self chooseEditionAnchoredAt:_editionButton]; }
+- (void)chooseEditionAnchoredAt:(UIView *)anchor {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.edition.title") message:nil preferredStyle:UIAlertControllerStyleActionSheet];
-    for (NSDictionary *product in TKWoWProducts()) [sheet addAction:[UIAlertAction actionWithTitle:product[@"name"] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        (void)action; [self selectProduct:product];
-    }]];
-    [self presentSheet:sheet anchor:_editionButton];
+    for (NSDictionary *product in TKWoWProducts()) {
+        NSString *title=product[@"name"];
+        if ([product isEqual:_product]) title=[@"✓ " stringByAppendingString:title];
+        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            (void)action; [self selectProduct:product];
+        }]];
+    }
+    [self presentSheet:sheet anchor:anchor];
 }
 // The game's download language, through the one writer. The app's language is a different
 // setting and lives on its own row; both routes that change the game's language - this
@@ -1354,17 +1334,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     navigation.modalInPresentation=YES;
     WKPresentWhenFree(self, ^{ [self presentViewController:navigation animated:YES completion:nil]; });
 }
-- (UIAlertController *)settingsSheet {
-    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.settings.title")
-        message:WKLocalized(@"home.settings.message") preferredStyle:UIAlertControllerStyleActionSheet];
-    if(!_busy && !_starting && !_sessionUsed && _installation.app) {
-        [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.repair") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-            (void)a; [self repairInstallation];
-        }]];
-    }
-    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.diagnostics") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        (void)a; [self diagnostics];
-    }]];
+// The two switches a person turns on only when asked to, and the raw reason for the last failure.
+// They used to share the gear's sheet with Repair and About; now that those are rows, these are
+// what is left, one level down from Support.
+- (UIAlertController *)developerSheet {
+    UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"row.developer")
+        message:nil preferredStyle:UIAlertControllerStyleActionSheet];
     BOOL networkHealth=[NSUserDefaults.standardUserDefaults boolForKey:@"WolkaraForever.NetworkHealth.NextLaunch"];
     [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(networkHealth?@"home.settings.networkHealthOff":@"home.settings.networkHealthOn") style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *a) {
         NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
@@ -1383,9 +1358,6 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         [AKInputRouter.shared refreshInterest];
         [AKControllerInspector.shared showPanel:!inputDiagnostics];
     }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.about") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
-        (void)a; [self about];
-    }]];
     if (_startupFailure || _error || _installation.error) [sheet addAction:[UIAlertAction actionWithTitle:WKLocalized(@"home.settings.technical") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         (void)a;
         // The raw reason, in whatever language the layer produced it: it is detail, and it matches
@@ -1395,9 +1367,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     }]];
     return sheet;
 }
-- (void)settings {
-    [self presentSheet:[self settingsSheet] anchor:nil];
+- (void)developerOptions {
+    [self presentSheet:[self developerSheet] anchor:_developerRow];
 }
+- (void)settings { [self showSettingsTab]; }
 // Everything about dictation lives on its own screen: the button, the mode, its
 // test page, and what happens to the words afterwards.
 - (void)manageVoice {

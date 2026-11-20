@@ -6,12 +6,12 @@ WolkaraForever can run on an iPhone that meets the [installation requirements](I
 
 ## Choose the phone interface
 
-On a phone, **Interface Mode** in **Launcher Manager** starts at **Automatic**, which picks the
+On a phone, **Interface Mode** on the **Controls** tab starts at **Automatic**, which picks the
 phone interface for this hardware: **iPhone Duo** on a Duo and **iPhone** on other phones. To
 choose one yourself:
 
-1. Open **Launcher Manager**.
-2. Choose **Interface Mode**, then **iPhone**, **iPhone Duo** or **iPad**.
+1. Open the **Controls** tab.
+2. Tap **Interface Mode**, then choose **iPhone**, **iPhone Duo** or **iPad**.
 3. Return home and confirm that the interface you chose is active.
 
 The choice changes the interface only. An earlier choice is kept: a phone that was set to **iPad**
@@ -23,7 +23,7 @@ Keep enough free storage for the game and updates. Use a reliable network for th
 
 ## Troubleshoot safely
 
-Use **Settings → Diagnostics and logs** for the exact error message and for the log itself:
+Use **Settings › Diagnostics & Logs** for the exact error message and for the log itself:
 [Send us a log](SENDING_LOGS.md) has the three steps. Do not delete the app to solve a
 configuration problem. Read [Compatibility](../COMPATIBILITY.md) before relying on a
 device-specific workflow.

@@ -38,7 +38,13 @@ wolkaraforever/Shell/artwork/tinted.svg artwork/wolkaraforever/tinted.svg add
 wolkaraforever/Shell/artwork/wolkaraforever-icon-source.png artwork/wolkaraforever/wolkaraforever-icon-source.png add
 wolkaraforever/Shell/artwork/wolkaraforever-logo.png artwork/wolkaraforever/wolkaraforever-logo.png add
 wolkaraforever/Shell/de.lproj/Localizable.strings launcher/App/de.lproj/Localizable.strings add
+wolkaraforever/Shell/de.lproj/Localizable.strings launcher/App/de.lproj/Localizable.strings add
+wolkaraforever/Shell/de.lproj/Localizable.strings launcher/App/de.lproj/Localizable.strings add
 wolkaraforever/Shell/en.lproj/Localizable.strings launcher/App/en.lproj/Localizable.strings add
+wolkaraforever/Shell/en.lproj/Localizable.strings launcher/App/en.lproj/Localizable.strings add
+wolkaraforever/Shell/en.lproj/Localizable.strings launcher/App/en.lproj/Localizable.strings add
+wolkaraforever/Shell/fr.lproj/Localizable.strings launcher/App/fr.lproj/Localizable.strings add
+wolkaraforever/Shell/fr.lproj/Localizable.strings launcher/App/fr.lproj/Localizable.strings add
 wolkaraforever/Shell/fr.lproj/Localizable.strings launcher/App/fr.lproj/Localizable.strings add
 wolkaraforever/Shell/main.m launcher/App/main.m replace
 wolkaraforever/Shell/tests/test_background_pacing.m tests/test_background_pacing.m add
@@ -64,6 +70,8 @@ wolkaraforever/WoW/AddonUpdateResolver.h launcher/WoW/AddonUpdateResolver.h add
 wolkaraforever/WoW/AddonUpdateResolver.m launcher/WoW/AddonUpdateResolver.m add
 wolkaraforever/WoW/BattleNetBrowser.h launcher/WoW/BattleNetBrowser.h add
 wolkaraforever/WoW/BattleNetBrowser.m launcher/WoW/BattleNetBrowser.m add
+wolkaraforever/WoW/BattleNetSavedPassword.h launcher/WoW/BattleNetSavedPassword.h add
+wolkaraforever/WoW/BattleNetSavedPassword.m launcher/WoW/BattleNetSavedPassword.m add
 wolkaraforever/WoW/BattleNetSession.h launcher/WoW/BattleNetSession.h add
 wolkaraforever/WoW/BattleNetSession.m launcher/WoW/BattleNetSession.m add
 wolkaraforever/WoW/CASC.h launcher/WoW/CASC.h add
@@ -91,6 +99,8 @@ wolkaraforever/WoW/Updater.h launcher/WoW/Updater.h add
 wolkaraforever/WoW/Updater.m launcher/WoW/Updater.m add
 wolkaraforever/WoW/WoWViewController.h launcher/WoW/WoWViewController.h add
 wolkaraforever/WoW/WoWViewController.m launcher/WoW/WoWViewController.m add
+wolkaraforever/WoW/WoWViewController.m launcher/WoW/WoWViewController.m add
+wolkaraforever/WoW/WoWViewController.m launcher/WoW/WoWViewController.m add
 wolkaraforever/WoW/tests/addon_hub_live.h tests/addon_hub_live.h add
 wolkaraforever/WoW/tests/addon_hub_live.m tests/addon_hub_live.m add
 wolkaraforever/WoW/tests/addon_hub_live_main.m tests/addon_hub_live_main.m add
@@ -98,6 +108,7 @@ wolkaraforever/WoW/tests/test_addon_archive.swift tests/test_addon_archive.swift
 wolkaraforever/WoW/tests/test_addon_import.m tests/test_addon_import.m add
 wolkaraforever/WoW/tests/test_addon_package.swift tests/test_addon_package.swift add
 wolkaraforever/WoW/tests/test_addon_resolver.m tests/test_addon_resolver.m add
+wolkaraforever/WoW/tests/test_battlenet_saved_password.m tests/test_battlenet_saved_password.m add
 wolkaraforever/WoW/tests/test_battlenet_session.m tests/test_battlenet_session.m add
 wolkaraforever/WoW/tests/test_curseforge.m tests/test_curseforge.m add
 wolkaraforever/WoW/tests/test_device_profile.m tests/test_device_profile.m add
@@ -106,6 +117,8 @@ wolkaraforever/WoW/tests/test_forever_ui_archive.swift tests/test_forever_ui_arc
 wolkaraforever/WoW/tests/test_wow_client.m tests/test_wow_client.m add
 wolkaraforever/WoW/tests/test_wow_download_status.m tests/test_wow_download_status.m add
 wolkaraforever/WoW/tests/test_wow_installation.m tests/test_wow_installation.m add
+wolkaraforever/WoW/tests/test_wow_launcher_app.m tests/test_wow_launcher_app.m add
+wolkaraforever/WoW/tests/test_wow_launcher_app.m tests/test_wow_launcher_app.m add
 wolkaraforever/WoW/tests/test_wow_launcher_app.m tests/test_wow_launcher_app.m add
 wolkaraforever/WoW/tests/test_wow_manifest.m tests/test_wow_manifest.m add
 wolkaraforever/WoW/tests/test_wow_update.m tests/test_wow_update.m add

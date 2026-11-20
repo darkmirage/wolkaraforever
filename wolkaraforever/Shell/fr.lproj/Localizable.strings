@@ -865,7 +865,7 @@
 "login.enable.message" = "Cette fonction optionnelle transmet un résultat de connexion à usage unique à Forever seulement après avoir choisi Jouer. Elle peut cesser de fonctionner sans préavis. Elle ne remplace pas la connexion normale dans le jeu. Utilisez-la à vos risques.";
 "login.enable.confirm" = "Je comprends — activer";
 "login.cleared.title" = "Données de connexion effacées";
-"login.cleared.message" = "La session web (en mémoire et enregistrée) et tout ticket de lancement en attente ont été supprimés.";
+"login.cleared.message" = "La session web (en mémoire et enregistrée), tout ticket de lancement en attente et le mot de passe enregistré ont été supprimés.";
 "login.failed" = "La connexion ne s’est pas terminée. Annulez et réessayez.";
 "login.stay.on" = "Rester connecté";
 "login.stay.off" = "Ne plus rester connecté";
@@ -919,3 +919,62 @@
 "row.diagnostics" = "Diagnostics et journaux";
 "row.developer" = "Options pour les développeurs";
 "row.about" = "À propos";
+
+/* ---- Recovered from the merged feature branches ---- */
+"home.batterySaver.title" = "Économiseur de batterie";
+"home.batterySaver.message" = "Ces deux réglages s’appliquent au prochain lancement du jeu.";
+"home.batterySaver.frameLimit" = "Limite d’images : %@";
+"home.batterySaver.frameLimit.title" = "Limite d’images par seconde";
+"home.batterySaver.frameLimit.message" = "Automatique, c’est 60 i/s sur secteur et 30 i/s sur batterie. Le mode Économie d’énergie ou un appareil chaud ramène toute limite à 30 i/s. S’applique au prochain lancement du jeu.";
+"home.batterySaver.afk" = "Économiseur d’inactivité : %@";
+"home.batterySaver.afk.title" = "Économiseur d’inactivité";
+"home.batterySaver.afk.message" = "Après ce délai sans entrée, l’écran s’assombrit et le jeu est limité à 10 i/s. La première touche, touche de clavier, action de souris ou de manette ne fait que le réveiller. S’applique au prochain lancement du jeu.";
+"home.batterySaver.frame.automatic" = "Automatique";
+"home.batterySaver.frame.30" = "30 i/s";
+"home.batterySaver.frame.60" = "60 i/s";
+"home.batterySaver.afk.2" = "2 minutes";
+"home.batterySaver.afk.5" = "5 minutes";
+"home.batterySaver.afk.10" = "10 minutes";
+"home.batterySaver.off" = "Désactivé";
+
+/* ---- Controller Manager, French: this feature shipped without a French table ---- */
+"controller.binding.header" = "Commande physique → ce qu'elle pilote";
+"controller.binding.unassigned" = "Non attribuée";
+"controller.cancel" = "Annuler la réattribution";
+"controller.disclosure" = "Les attributions sont enregistrées par modèle de manette. Deux manettes identiques connectées en même temps partagent une seule attribution, car iPadOS n'identifie pas chaque manette. Rien ici ne modifie les attributions de World of Warcraft ni son réglage de manette.";
+"controller.enabled" = "Faire passer les manettes physiques par une manette virtuelle";
+"controller.learn" = "Réattribuer une commande";
+"controller.learn.hint" = "Appuyez sur la commande à réattribuer ou déplacez-la, puis choisissez ce qu'elle pilote.";
+"controller.nomodels" = "Aucune manette n'est connectée.";
+"controller.reserved" = "  ·  bouton système";
+"controller.reset" = "Rétablir la disposition standard de cette manette";
+"controller.section.change" = "Modifier l'attribution";
+"controller.section.model" = "Manette et attribution";
+"controller.section.routing" = "Routage";
+"controller.status.connecting" = "Démarrage de la manette virtuelle…";
+"controller.status.disabled" = "Désactivé. Une manette physique atteint le jeu directement.";
+"controller.status.failed" = "La manette virtuelle n'a pas pu démarrer ; rien n'est routé.";
+"controller.status.nocontroller" = "Activé, mais aucune manette n'est connectée. Connectez-en une en Bluetooth ou en USB.";
+"controller.status.nofacade" = "Cette compilation ne peut pas masquer une manette physique au jeu ; le routage est donc refusé plutôt que de doubler chaque appui.";
+"controller.status.pending" = "Activé. Le démarrage a lieu avec celui du jeu.";
+"controller.status.routing" = "Activé. Une manette virtuelle est proposée au jeu.";
+"controller.targets.title" = "Que doit-elle piloter ?";
+"controller.title" = "Gestionnaire de manette";
+"controller.unavailable" = "absente de cette manette";
+
+/* ---- Saved game password, experimental Battle.net login ---- */
+"login.status.onSaved" = "Activé · mot de passe enregistré";
+"login.savedPassword.signIn" = "Se connecter avec le mot de passe enregistré";
+"login.savedPassword.forget" = "Oublier le mot de passe enregistré";
+"login.savedPassword.forgotten.title" = "Mot de passe enregistré oublié";
+"login.savedPassword.forgotten.message" = "Le mot de passe conservé sur cet appareil a été supprimé. Le jeu le redemandera.";
+"login.savedPassword.save.title" = "Enregistrer votre mot de passe sur cet appareil ?";
+"login.savedPassword.save.message" = "Il est conservé dans le trousseau de cet appareil derrière Face ID ou votre code, ne quitte jamais l'appareil et est saisi dans le champ du mot de passe du jeu quand vous touchez la clé. Maintenez la clé pour l'oublier.";
+"login.savedPassword.save.placeholder" = "Mot de passe Battle.net";
+"login.savedPassword.save.confirm" = "Enregistrer et se connecter";
+"login.savedPassword.forget.title" = "Oublier le mot de passe enregistré ?";
+"login.savedPassword.forget.message" = "Le mot de passe conservé sur cet appareil est supprimé. Le jeu le redemandera.";
+"login.savedPassword.forget.confirm" = "Oublier";
+"login.savedPassword.failed.title" = "Le mot de passe n'a pas été enregistré";
+"login.savedPassword.failed" = "Cet appareil n'a pas conservé le mot de passe : il faut un code, et la clé a besoin de l'accès au trousseau de cette compilation. La connexion a bien eu lieu, mais le mot de passe sera redemandé.";
+"touch.key.savedPassword" = "Mot de passe enregistré";

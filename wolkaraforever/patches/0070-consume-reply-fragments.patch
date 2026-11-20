@@ -1,0 +1,99 @@
+# WolkaraForever layer patch 0070 - process each received fragment up to its first wire event.
+# The existing C state machine still validates every byte. Swift handles each event
+# before consuming the next byte so unsolicited responses are rejected as before.
+--- a/authorization/DebugWire.h
++++ b/authorization/DebugWire.h
+@@ -17,5 +17,8 @@
+ } DWParser;
+ void dw_init(DWParser *parser,void *buffer,size_t capacity);
+ DWEvent dw_feed(DWParser *parser,uint8_t byte);
++// Consume at most size bytes, stopping at the first event. consumed is the
++// number of bytes read, including the event byte; zero for an empty fragment.
++DWEvent dw_feed_fragment(DWParser *parser, const uint8_t *bytes, size_t size, size_t *consumed);
+ // All-or-nothing packet encoding; returns 0 if the destination is too small.
+ size_t dw_encode(const void *payload,size_t length,void *destination,size_t capacity);
+--- a/authorization/DebugWire.c
++++ b/authorization/DebugWire.c
+@@ -50,6 +50,18 @@
+     }
+     return fail(p,DW_MALFORMED);
+ }
++DWEvent dw_feed_fragment(DWParser *parser, const uint8_t *bytes, size_t size, size_t *consumed) {
++    for (size_t i = 0; i < size; i++) {
++        DWEvent event = dw_feed(parser, bytes[i]);
++        if (event != DW_MORE) {
++            *consumed = i + 1;
++            return event;
++        }
++    }
++    *consumed = size;
++    return DW_MORE;
++}
++
+ static bool needs_escape(uint8_t b) {return b=='$'||b=='#'||b=='}'||b=='*';}
+ size_t dw_encode(const void *payload,size_t length,void *destination,size_t capacity) {
+     if(!destination || (length && !payload) || capacity<4 || length>capacity-4)return 0;
+--- a/authorization/Debugger/DebugProtocolWire.swift
++++ b/authorization/Debugger/DebugProtocolWire.swift
+@@ -14,8 +14,16 @@
+         set { parser.zero_checksum = newValue }
+     }
+     deinit { storage.deallocate() }
+-    func feed(_ byte: UInt8) throws -> Event? {
+-        switch dw_feed(&parser,byte) {
++    func feed(_ bytes: Data, offset: inout Int) throws -> Event? {
++        guard offset >= 0, offset < bytes.count else { throw PairingError.malformed }
++        let event = bytes.withUnsafeBytes { raw -> DWEvent in
++            let input = raw.bindMemory(to: UInt8.self)
++            var consumed = 0
++            let event = dw_feed_fragment(&parser, input.baseAddress! + offset, input.count - offset, &consumed)
++            offset += consumed
++            return event
++        }
++        switch event {
+         case DW_MORE:return nil
+         case DW_PACKET:return .packet(Data(bytes:storage,count:parser.length))
+         case DW_ACK:return .ack
+--- a/authorization/Debugger/DebugArenaSession.swift
++++ b/authorization/Debugger/DebugArenaSession.swift
+@@ -93,9 +93,10 @@
+             try time(now)
+             if now >= commandDeadline || now >= totalDeadline { return finish(.timedOut,detached:false) }
+             guard bytes.count <= outstanding*(packetSize+8) else { throw Reason.protocolFailure }
+-            for byte in bytes {
++            var offset = 0
++            while offset < bytes.count {
+                 guard answerable > 0 else { throw Reason.protocolFailure }
+-                guard let event = try wire.feed(byte) else { continue }
++                guard let event = try wire.feed(bytes, offset: &offset) else { continue }
+                 switch event {
+                 case .ack:
+                     guard !noAck, !acknowledged else { throw Reason.protocolFailure }; acknowledged = true
+--- a/tests/test_debug_wire.c
++++ b/tests/test_debug_wire.c
+@@ -8,7 +8,25 @@
+     for(size_t i=0;i<length;i++) {event=dw_feed(p,b[i]);if(i+1<length)assert(event==DW_MORE);}
+     return event;
+ }
++static void test_fragment_boundaries(void) {
++    uint8_t storage[8];
++    DWParser parser;
++    dw_init(&parser, storage, sizeof storage);
++    size_t used = 99;
++    assert(dw_feed_fragment(&parser, NULL, 0, &used) == DW_MORE && used == 0);
++    const uint8_t start[] = "+$AB#8";
++    assert(dw_feed_fragment(&parser, start, sizeof start - 1, &used) == DW_ACK && used == 1);
++    assert(dw_feed_fragment(&parser, start + 1, sizeof start - 2, &used) == DW_MORE && used == 5);
++    const uint8_t end[] = "3-$A#00+";
++    assert(dw_feed_fragment(&parser, end, sizeof end - 1, &used) == DW_PACKET && used == 1);
++    assert(parser.length == 2 && memcmp(storage, "AB", 2) == 0);
++    assert(dw_feed_fragment(&parser, end + 1, sizeof end - 2, &used) == DW_NACK && used == 1);
++    assert(dw_feed_fragment(&parser, end + 2, sizeof end - 3, &used) == DW_BAD_CHECKSUM && used == 5);
++    assert(dw_feed_fragment(&parser, end + 7, 1, &used) == DW_ACK && used == 1);
++}
++
+ int main(void) {
++    test_fragment_boundaries();
+     uint8_t buffer[1024],encoded[2048],input[256];DWParser p;dw_init(&p,buffer,sizeof buffer);
+     assert(dw_feed(&p,'+')==DW_ACK && dw_feed(&p,'-')==DW_NACK);
+     assert(receive(&p,"$OK#9a",6)==DW_PACKET && p.length==2 && !memcmp(buffer,"OK",2));

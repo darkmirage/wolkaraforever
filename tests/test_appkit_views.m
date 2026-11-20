@@ -3,13 +3,24 @@
 // so windows are never put on screen here.
 #import "AppKit.h"
 #import "TouchControls.h"
+#import "Drawing.h"
 #include <assert.h>
+extern void AKGuestProcessDidExit(size_t slot);
+extern void AKSetWindowProcess(NSWindow *window,size_t slot);
+
+// Exercise the ordering model without requiring a UIKit scene.
+@interface NSWindow (OrderingTest)
+- (void)ak_order:(NSInteger)mode relativeTo:(NSInteger)number;
+@end
 
 // Draws by updating its layer, as Wine's Mac driver does.
 @interface LayerView : NSView
 @property int updates;
+@property int notifications;
+- (void)fixtureNotification:(NSNotification *)note;
 @end
 @implementation LayerView
+- (void)fixtureNotification:(NSNotification *)note { (void)note; self.notifications++; }
 - (BOOL)wantsUpdateLayer { return YES; }
 - (void)updateLayer { self.updates++; self.layer.position = CGPointMake(5, 6); }
 // One pixel a point, whatever the screen's scale.
@@ -46,10 +57,38 @@
 @interface NSObject (FixtureHostInput)
 - (void)postKeys:(NSSet *)presses down:(BOOL)down;
 - (void)postRelativeMouseX:(CGFloat)dx y:(CGFloat)dy;
+- (void)rawMouseMovedX:(CGFloat)dx y:(CGFloat)dy;
+- (BOOL)wantsPointerLock;
 - (void)anchorChanged:(NSNotification *)notification;
 - (void)touchMoveBy:(CGPoint)delta;
 - (void)touchScrollBy:(CGPoint)delta;
 - (void)touchButton:(unsigned)button pressed:(BOOL)pressed;
+- (void)quickKeyDown:(UIButton *)button;
+- (void)quickKeyUp:(UIButton *)button;
+@end
+// The AppKit adapter's CFUserNotification functions (Alerts.m).
+CFTypeRef AKGuestUserNotificationCreate(CFAllocatorRef, CFTimeInterval, CFOptionFlags, SInt32 *, CFDictionaryRef);
+SInt32 AKGuestUserNotificationUpdate(CFTypeRef, CFTimeInterval, CFOptionFlags, CFDictionaryRef);
+SInt32 AKGuestUserNotificationCancel(CFTypeRef);
+SInt32 AKGuestUserNotificationReceiveResponse(CFTypeRef, CFTimeInterval, CFOptionFlags *);
+CFRunLoopSourceRef AKGuestUserNotificationCreateRunLoopSource(CFAllocatorRef, CFTypeRef, void (*)(CFTypeRef, CFOptionFlags), CFIndex);
+static unsigned userNotificationCalls; static CFOptionFlags userNotificationFlags;
+static void user_notification_answered(CFTypeRef notification, CFOptionFlags flags) {
+    (void)notification; userNotificationCalls++; userNotificationFlags = flags;
+}
+// A finger (or a pointer's click) as the host view's touch methods read it.
+@interface FixtureTouch : NSObject
+@property UITouchType type;
+@property CGPoint point;
+@end
+@implementation FixtureTouch
+- (CGPoint)locationInView:(UIView *)view { (void)view; return self.point; }
+@end
+@interface FixtureTouchEvent : NSObject
+@property UIEventButtonMask buttonMask;
+@property UIKeyModifierFlags modifierFlags;
+@end
+@implementation FixtureTouchEvent
 @end
 @interface FixtureKeyResponder : NSResponder
 @property unsigned downs, ups;
@@ -68,7 +107,103 @@ static NSEvent *next_input(void) {
     return event;
 }
 
+// What every column layout must hold: the buttons on the screen, clear of each
+// other, of the game and of the home indicator's inset, the left side's left
+// of the game and the right side's right of it, on `columns` columns a side.
+static void check_touch_layout(AKTouchLayout layout, CGSize size, UIEdgeInsets safe, NSUInteger columns) {
+    CGRect bounds = CGRectMake(0, 0, size.width, size.height);
+    assert(layout.columns == columns && CGRectContainsRect(bounds, layout.game));
+    if (!columns) { assert(CGRectEqualToRect(layout.game, bounds)); return; }
+    assert(layout.game.origin.y == 0 && layout.game.size.height == size.height && layout.game.size.width >= 400);
+    NSMutableSet<NSNumber *> *left = [NSMutableSet new], *right = [NSMutableSet new];
+    for (unsigned i = 0; i < AKTouchButtonCount; i++) {
+        CGRect frame = layout.buttons[i];
+        assert(CGRectContainsRect(bounds, frame) && frame.size.width >= 34 && frame.size.width <= 44 && frame.size.height == frame.size.width);
+        assert(CGRectGetMaxY(frame) <= size.height - safe.bottom && CGRectGetMinY(frame) >= safe.top);
+        BOOL leftSide = i < AKTouchLeftButtons;
+        assert(leftSide ? CGRectGetMaxX(frame) <= CGRectGetMinX(layout.game) : CGRectGetMinX(frame) >= CGRectGetMaxX(layout.game));
+        [leftSide ? left : right addObject:@(CGRectGetMidX(frame))];
+        for (unsigned j = 0; j < i; j++) assert(!CGRectIntersectsRect(CGRectInset(frame, -3, -3), layout.buttons[j]));
+    }
+    assert(left.count == columns && right.count == columns);
+}
+static void touch_layout_tests(void) {
+    CGRect none = CGRectNull;
+    // iPhone Duo, unfolded: one column in the strip and one mirroring it, from
+    // the strip's top, wherever the strip is; the game between them.
+    CGSize duo = CGSizeMake(951, 669);
+    AKTouchLayout layout = AKTouchLayoutFor(duo, UIEdgeInsetsZero, CGRectMake(895, 132, 56, 537));
+    AKTouchLayout mirrored = AKTouchLayoutFor(duo, UIEdgeInsetsZero, CGRectMake(0, 132, 56, 537));
+    check_touch_layout(layout, duo, UIEdgeInsetsZero, 1);
+    assert(!memcmp(&layout, &mirrored, sizeof layout) && CGRectEqualToRect(layout.game, CGRectMake(56, 0, 839, 669)));
+    assert(CGRectEqualToRect(layout.buttons[0], CGRectMake(6, 132, 44, 44)) && CGRectEqualToRect(layout.buttons[8], CGRectMake(6, 548, 44, 44)));
+    assert(CGRectEqualToRect(layout.buttons[9], CGRectMake(901, 132, 44, 44)) && CGRectEqualToRect(layout.buttons[16], CGRectMake(901, 496, 44, 44)));
+    // An iPad: one full-size column a side, in the middle of the height, the
+    // rows level and Jump beside key 0; also upright.
+    CGSize pad = CGSizeMake(1376, 1032);
+    UIEdgeInsets padSafe = UIEdgeInsetsMake(0, 0, 20, 0);
+    layout = AKTouchLayoutFor(pad, padSafe, none);
+    check_touch_layout(layout, pad, padSafe, 1);
+    assert(CGRectEqualToRect(layout.game, CGRectMake(56, 0, 1264, 1032)));
+    assert(CGRectEqualToRect(layout.buttons[0], CGRectMake(6, 276, 44, 44)) && CGRectEqualToRect(layout.buttons[8], CGRectMake(6, 692, 44, 44)));
+    assert(CGRectEqualToRect(layout.buttons[9], CGRectMake(1326, 328, 44, 44)) && CGRectEqualToRect(layout.buttons[16], CGRectMake(1326, 692, 44, 44)));
+    check_touch_layout(AKTouchLayoutFor(CGSizeMake(1032, 1376), padSafe, none), CGSizeMake(1032, 1376), padSafe, 1);
+    check_touch_layout(AKTouchLayoutFor(CGSizeMake(1133, 744), padSafe, none), CGSizeMake(1133, 744), padSafe, 1);
+    // An iPhone on its side (iPhone 17 Pro): two columns a side at full size,
+    // 20 points from the top for the rounded corners.
+    // The inner ones stand past the Dynamic Island's inset, so the game loses
+    // one column beyond it; Escape and Tab, keyboard and stick stand in the
+    // inset, above the island (which starts 63 points above the middle).
+    CGSize phone = CGSizeMake(874, 402);
+    UIEdgeInsets phoneSafe = UIEdgeInsetsMake(0, 62, 20, 62);
+    layout = AKTouchLayoutFor(phone, phoneSafe, none);
+    check_touch_layout(layout, phone, phoneSafe, 2);
+    assert(CGRectEqualToRect(layout.game, CGRectMake(118, 0, 638, 402)));
+    assert(CGRectEqualToRect(layout.buttons[0], CGRectMake(12, 22, 44, 44)) && CGRectEqualToRect(layout.buttons[1], CGRectMake(12, 73, 44, 44)));
+    assert(CGRectEqualToRect(layout.buttons[2], CGRectMake(68, 22, 44, 44)) && CGRectEqualToRect(layout.buttons[8], CGRectMake(68, 328, 44, 44)));
+    assert(CGRectEqualToRect(layout.buttons[9], CGRectMake(818, 22, 44, 44)) && CGRectEqualToRect(layout.buttons[10], CGRectMake(818, 73, 44, 44)));
+    assert(CGRectEqualToRect(layout.buttons[11], CGRectMake(762, 73, 44, 44)) && CGRectEqualToRect(layout.buttons[16], CGRectMake(762, 328, 44, 44)));
+    for (unsigned i = 0; i < AKTouchButtonCount; i++) if (layout.buttons[i].origin.x < 62 || CGRectGetMaxX(layout.buttons[i]) > 812)
+        assert(CGRectGetMaxY(layout.buttons[i]) < 201 - 63);
+    // The largest and a small one with insets, and one without (two columns
+    // beside each other at the edge); the buttons shrink where they must.
+    UIEdgeInsets wide = UIEdgeInsetsMake(0, 62, 20, 62), narrow = UIEdgeInsetsMake(0, 47, 21, 47);
+    check_touch_layout(AKTouchLayoutFor(CGSizeMake(956, 440), wide, none), CGSizeMake(956, 440), wide, 2);
+    check_touch_layout(AKTouchLayoutFor(CGSizeMake(844, 390), narrow, none), CGSizeMake(844, 390), narrow, 2);
+    layout = AKTouchLayoutFor(CGSizeMake(667, 375), UIEdgeInsetsZero, none);
+    check_touch_layout(layout, CGSizeMake(667, 375), UIEdgeInsetsZero, 2);
+    assert(CGRectEqualToRect(layout.game, CGRectMake(112, 0, 443, 375)) && layout.buttons[0].origin.x == 6 && layout.buttons[2].origin.x == 62);
+    layout = AKTouchLayoutFor(CGSizeMake(568, 320), UIEdgeInsetsZero, none);
+    check_touch_layout(layout, CGSizeMake(568, 320), UIEdgeInsetsZero, 0);
+    layout = AKTouchLayoutFor(CGSizeMake(700, 320), UIEdgeInsetsZero, none);
+    check_touch_layout(layout, CGSizeMake(700, 320), UIEdgeInsetsZero, 2);
+    assert(layout.buttons[2].size.width == 38);
+    // Where columns would leave the game under 400 points of width, the row
+    // over the whole screen: an iPhone upright, a narrow iPad window.
+    UIEdgeInsets upright = UIEdgeInsetsMake(62, 0, 34, 0);
+    check_touch_layout(AKTouchLayoutFor(CGSizeMake(402, 874), upright, none), CGSizeMake(402, 874), upright, 0);
+    check_touch_layout(AKTouchLayoutFor(CGSizeMake(500, 700), UIEdgeInsetsZero, none), CGSizeMake(500, 700), UIEdgeInsetsZero, 0);
+    check_touch_layout(AKTouchLayoutFor(CGSizeMake(512, 700), UIEdgeInsetsZero, none), CGSizeMake(512, 700), UIEdgeInsetsZero, 1);
+}
+
 int main(void) { @autoreleasepool {
+    // A transparent desktop popup must not acquire an opaque black UIKit
+    // backing. Exercise both properties against the actual host surfaces.
+    NSWindow *popup=[[NSWindow alloc] initWithContentRect:CGRectMake(0,0,80,100) styleMask:0 backing:0 defer:NO];
+    UIView *popupHost=[UIView new];
+    UIWindow *popupUI=[UIWindow new];
+    [popup setValue:popupHost forKey:@"host"];
+    [popup setValue:popupUI forKey:@"uiWindow"];
+    popup.backgroundColor=NSColor.clearColor;
+    popup.opaque=NO;
+    assert(!popupHost.opaque && !popupUI.opaque);
+    assert(CGColorGetAlpha(popupHost.backgroundColor.CGColor)==0);
+    assert(CGColorGetAlpha(popupUI.backgroundColor.CGColor)==0);
+    popup.backgroundColor=NSColor.whiteColor;
+    popup.opaque=YES;
+    assert(popupHost.opaque && popupUI.opaque);
+    assert(CGColorGetAlpha(popupHost.backgroundColor.CGColor)==1);
+
     // Marking for display coalesces into one updateLayer on the main queue;
     // a view that does not want updateLayer gets none.
     LayerView *view = [[LayerView alloc] initWithFrame:CGRectMake(0, 0, 100, 50)];
@@ -172,6 +307,28 @@ int main(void) { @autoreleasepool {
     [defaults setBool:NO forKey:AKTouchControlsDefaultsKey];
     plainHost=[NSClassFromString(@"AKHostView") new];
     assert(![plainHost valueForKey:@"_touchControls"] && !plainHost.multipleTouchEnabled);
+    // Without the controls a finger is a left click where it lands, and the
+    // pointer gets there first: a game's hover state (a login button's)
+    // follows mouse-moved events. A pointer the game holds is not moved.
+    [NSApplication sharedApplication];
+    [plainHost setValue:window forKey:@"nsWindow"]; plainHost.frame=CGRectMake(0,0,200,100);
+    FixtureTouch *finger=[FixtureTouch new]; finger.type=UITouchTypeDirect; finger.point=CGPointMake(120,30);
+    FixtureTouchEvent *fingerEvent=[FixtureTouchEvent new];
+    [plainHost touchesBegan:[NSSet setWithObject:(UITouch *)finger] withEvent:(UIEvent *)fingerEvent];
+    NSEvent *arrive=[NSApp nextEventMatchingMask:UINT64_MAX untilDate:NSDate.distantPast inMode:NSDefaultRunLoopMode dequeue:YES];
+    NSEvent *down=[NSApp nextEventMatchingMask:UINT64_MAX untilDate:NSDate.distantPast inMode:NSDefaultRunLoopMode dequeue:YES];
+    assert(arrive && arrive.type==NSEventTypeMouseMoved && CGPointEqualToPoint(arrive.locationInWindow,CGPointMake(120,70)));
+    assert(down && down.type==NSEventTypeLeftMouseDown && CGPointEqualToPoint(down.locationInWindow,CGPointMake(120,70)) && down.deltaX==0 && down.deltaY==0);
+    [plainHost touchesEnded:[NSSet setWithObject:(UITouch *)finger] withEvent:(UIEvent *)fingerEvent];
+    NSEvent *up=[NSApp nextEventMatchingMask:UINT64_MAX untilDate:NSDate.distantPast inMode:NSDefaultRunLoopMode dequeue:YES];
+    assert(up && up.type==NSEventTypeLeftMouseUp);
+    AKMouseSetCaptured(true);
+    [plainHost touchesBegan:[NSSet setWithObject:(UITouch *)finger] withEvent:(UIEvent *)fingerEvent];
+    down=[NSApp nextEventMatchingMask:UINT64_MAX untilDate:NSDate.distantPast inMode:NSDefaultRunLoopMode dequeue:YES];
+    assert(down && down.type==NSEventTypeLeftMouseDown);
+    [plainHost touchesEnded:[NSSet setWithObject:(UITouch *)finger] withEvent:(UIEvent *)fingerEvent];
+    AKMouseSetCaptured(false);
+    while([NSApp nextEventMatchingMask:UINT64_MAX untilDate:NSDate.distantPast inMode:NSDefaultRunLoopMode dequeue:YES]) {}
     [defaults setBool:YES forKey:AKTouchControlsDefaultsKey];
     id host=[NSClassFromString(@"AKHostView") new];
     [host setValue:window forKey:@"nsWindow"];
@@ -212,10 +369,11 @@ int main(void) { @autoreleasepool {
     // Unicode and never depend on reading the guest's text/selection.
     AKTouchControls *controls = [host valueForKey:@"_touchControls"];
     assert(controls && controls.hasText && controls.isSecureTextEntry);
-    // Only the two buttons take touches; the gap between them is the game's.
-    controls.frame = CGRectMake(0, 0, 96, 44); [controls layoutIfNeeded];
-    assert([controls pointInside:CGPointMake(20, 20) withEvent:nil] && [controls pointInside:CGPointMake(70, 20) withEvent:nil]);
-    assert(![controls pointInside:CGPointMake(48, 20) withEvent:nil]);
+    // Only the four buttons (Jump, stick, trackpad, keyboard) take touches;
+    // the gaps between them are the game's.
+    controls.frame = CGRectMake(0, 0, 200, 44); [controls layoutIfNeeded];
+    for (CGFloat x = 20; x < 200; x += 52) assert([controls pointInside:CGPointMake(x, 20) withEvent:nil]);
+    for (CGFloat x = 48; x < 200; x += 52) assert(![controls pointInside:CGPointMake(x, 20) withEvent:nil]);
     [controls insertText:@"@ñ🙂"];
     NSArray<NSString *> *typed = @[@"@", @"ñ", @"🙂"];
     for (unsigned i = 0; i < 3; i++) for (unsigned up = 0; up < 2; up++) {
@@ -251,6 +409,91 @@ int main(void) { @autoreleasepool {
     assert(move.deltaX == -500 && move.locationInWindow.x == 10 && move.locationInWindow.y >= 21 && move.locationInWindow.y <= 70);
     window.mouseConfinementRect = CGRectZero;
     AKMouseSetCaptured(false);
+    // CoreFoundation's user notification (a game's first-run progress dialog):
+    // created from the dictionary, updated, polled, answered once.
+    {
+        CFOptionFlags answer = 99;
+        NSDictionary *first = @{@"AlertHeader": @"10%", @"AlertMessage": @"Setting up", @"DefaultButtonTitle": @"Cancel",
+                                @"ProgressIndicatorValue": @0.1};
+        SInt32 failure = -1;
+        CFTypeRef notice = AKGuestUserNotificationCreate(NULL, 0, 0, &failure, (__bridge CFDictionaryRef)first);
+        NSObject *model = (__bridge NSObject *)notice;
+        assert(notice && failure == 0 && [[model valueForKey:@"header"] isEqual:@"10%"]);
+        assert([[model valueForKey:@"buttons"] isEqual:@[@"Cancel"]] && [[model valueForKey:@"progress"] doubleValue] == 0.1);
+        // Nothing answered yet: a poll times out and leaves the flags alone.
+        assert(AKGuestUserNotificationReceiveResponse(notice, 0.01, &answer) != 0 && answer == 99);
+        assert(AKGuestUserNotificationUpdate(notice, 0, 0, (__bridge CFDictionaryRef)@{@"AlertHeader": @"82%", @"AlertMessage": @"Setting up",
+            @"DefaultButtonTitle": @"Cancel", @"ProgressIndicatorValue": @0.82}) == 0);
+        assert([[model valueForKey:@"header"] isEqual:@"82%"] && [[model valueForKey:@"progress"] doubleValue] == 0.82);
+        // The run loop source delivers the response once, on its run loop.
+        userNotificationCalls = 0;
+        CFRunLoopSourceRef source = AKGuestUserNotificationCreateRunLoopSource(NULL, notice, user_notification_answered, 0);
+        assert(source);
+        CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopDefaultMode);
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, false);
+        assert(userNotificationCalls == 0);
+        [model performSelector:@selector(respond:) withObject:(__bridge id)(void *)1];
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, false);
+        assert(userNotificationCalls == 1 && userNotificationFlags == 1);
+        assert(AKGuestUserNotificationReceiveResponse(notice, 0.01, &answer) == 0 && answer == 1);
+        // A second answer, or a cancel after it, changes nothing.
+        assert(AKGuestUserNotificationCancel(notice) == 0);
+        assert(AKGuestUserNotificationReceiveResponse(notice, 0, &answer) == 0 && answer == 1);
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, false);
+        assert(userNotificationCalls == 1);
+        CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, kCFRunLoopDefaultMode);
+        CFRelease(source); CFRelease(notice);
+        // Cancelled by the guest: the response is "cancel". Three buttons keep their order.
+        notice = AKGuestUserNotificationCreate(NULL, 0, 0, NULL, (__bridge CFDictionaryRef)@{@"DefaultButtonTitle": @"A", @"OtherButtonTitle": @"C"});
+        assert([[(__bridge NSObject *)notice valueForKey:@"buttons"] isEqual:(@[@"A", @"", @"C"])]);
+        assert(![(__bridge NSObject *)notice valueForKey:@"progress"]);
+        assert(AKGuestUserNotificationCancel(notice) == 0 && AKGuestUserNotificationReceiveResponse(notice, 0, &answer) == 0 && answer == 3);
+        CFRelease(notice);
+        // Something that is not one of ours is refused, not followed.
+        assert(AKGuestUserNotificationUpdate((__bridge CFTypeRef)@"x", 0, 0, NULL) == -1);
+    }
+    // Pointer acceleration is on unless the launcher's switch stored a choice.
+    [defaults removeObjectForKey:AKPointerAccelerationDefaultsKey];
+    [defaults removeObjectForKey:AKPointerSpeedDefaultsKey];
+    assert(AKPointerAccelerationEnabled() && AKPointerSpeed() == 1);
+    assert(![[[NSClassFromString(@"AKHostView") new] valueForKey:@"_rawPointer"] boolValue]);
+    [defaults setBool:NO forKey:AKPointerAccelerationDefaultsKey];
+    [defaults setDouble:0.5 forKey:AKPointerSpeedDefaultsKey];
+    assert(!AKPointerAccelerationEnabled() && AKPointerSpeed() == 0.5);
+    NSObject *rawHost = [NSClassFromString(@"AKHostView") new];
+    assert([[rawHost valueForKey:@"_rawPointer"] boolValue] && [[rawHost valueForKey:@"_rawSpeed"] doubleValue] == 0.5);
+    // The iPadOS pointer is only locked for a mouse (the simulator has one
+    // while it captures the Mac's pointer).
+    assert([rawHost wantsPointerLock] == ([[NSClassFromString(@"GCMouse") valueForKey:@"mice"] count] > 0));
+    [defaults setDouble:0 forKey:AKPointerSpeedDefaultsKey];
+    assert(AKPointerSpeed() == 1);
+    [defaults removeObjectForKey:AKPointerAccelerationDefaultsKey];
+    [defaults removeObjectForKey:AKPointerSpeedDefaultsKey];
+    // Raw pointer: the free pointer moves by the mouse's own motion (y up)
+    // times the chosen speed, the same for a small step and a large one, and
+    // stops at the view's edge with the motion still reported.
+    NSPoint beforeRaw = window.ak_mouseLocation;
+    [host setValue:@YES forKey:@"_rawPointer"]; [host setValue:@0.5 forKey:@"_rawSpeed"];
+    [host rawMouseMovedX:100000 y:100000];
+    move = next_input();
+    assert(move.type == NSEventTypeMouseMoved && move.locationInWindow.x == 199 && move.locationInWindow.y == 100);
+    assert(move.deltaX == 50000 && move.deltaY == -50000);
+    [host rawMouseMovedX:-2 y:-4];
+    move = next_input();
+    assert(move.deltaX == -1 && move.deltaY == 2 && move.locationInWindow.x == 198 && move.locationInWindow.y == 98);
+    [host rawMouseMovedX:-200 y:-40];
+    move = next_input();
+    assert(move.deltaX == -100 && move.deltaY == 20 && move.locationInWindow.x == 98 && move.locationInWindow.y == 78);
+    assert([[host valueForKey:@"_rawCursorActive"] boolValue] && ![[host valueForKey:@"_touchCursorActive"] boolValue]);
+    // A pointer the game holds takes the mouse's motion as it is.
+    AKMouseSetCaptured(true);
+    [host rawMouseMovedX:7 y:3];
+    move = next_input();
+    assert(move.deltaX == 7 && move.deltaY == -3);
+    AKMouseSetCaptured(false);
+    [host setValue:@NO forKey:@"_rawPointer"]; [host setValue:@NO forKey:@"_rawCursorActive"];
+    [host touchMoveBy:CGPointMake(beforeRaw.x - window.ak_mouseLocation.x, window.ak_mouseLocation.y - beforeRaw.y)];
+    (void)next_input();
     [host touchScrollBy:CGPointMake(-2, 3)];
     NSEvent *wheelInput = next_input();
     AKQuartzEvent *wheelInputCG = (__bridge AKQuartzEvent *)wheelInput.CGEvent;
@@ -268,12 +511,227 @@ int main(void) { @autoreleasepool {
     assert(next_input().clickCount == 1); (void)next_input();
     [host touchButton:0 pressed:YES]; [host touchButton:0 pressed:NO];
     assert(next_input().clickCount == 2); (void)next_input();
+    // A touch drag with the right button held reaches the game as a mouse's
+    // would, step by step as it happens: as drags before the game captures
+    // the pointer and as captured motion after. Nothing is held back.
+    [host touchButton:1 pressed:YES];
+    assert(next_input().type == NSEventTypeRightMouseDown);
+    [host touchMoveBy:CGPointMake(12, -4)];
+    move = next_input();
+    assert(move.type == NSEventTypeRightMouseDragged && move.deltaX == 12 && move.deltaY == -4);
+    [host touchMoveBy:CGPointMake(6, 0)];
+    move = next_input();
+    assert(move.type == NSEventTypeRightMouseDragged && move.deltaX == 6 && move.deltaY == 0);
+    AKMouseSetCaptured(true);
+    assert(![NSApp nextEventMatchingMask:UINT64_MAX untilDate:NSDate.distantPast inMode:NSDefaultRunLoopMode dequeue:NO]);
+    [host touchMoveBy:CGPointMake(3, 0)];
+    move = next_input();
+    assert(move.type == NSEventTypeRightMouseDragged && move.deltaX == 3);
+    [host touchButton:1 pressed:NO];
+    assert(next_input().type == NSEventTypeRightMouseUp);
+    AKMouseSetCaptured(false);
+    touch_layout_tests();
+    // The movement stick needs trackpad mode, and turning that off ends it.
     controls.trackpadEnabled = NO;
-    assert(!hostView.multipleTouchEnabled);
+    controls.stickEnabled = YES;
+    assert(controls.trackpadEnabled && hostView.multipleTouchEnabled);
+    // The stick holds W, A, S and D down as the host's key events, with
+    // diagonals as two keys and every key released when the finger lifts.
+    [hostView addSubview:controls];
+    [controls stickPhase:UITouchPhaseBegan at:CGPointMake(50, 50)];
+    [controls stickPhase:UITouchPhaseMoved at:CGPointMake(50, 10)];
+    NSEvent *stickKey = next_input();
+    assert(stickKey.type == NSEventTypeKeyDown && stickKey.keyCode == 13 && [stickKey.characters isEqual:@"w"] && stickKey.window == window);
+    [controls stickPhase:UITouchPhaseMoved at:CGPointMake(20, 20)];
+    stickKey = next_input();
+    assert(stickKey.type == NSEventTypeKeyDown && stickKey.keyCode == 0 && [stickKey.charactersIgnoringModifiers isEqual:@"a"]);
+    [controls stickPhase:UITouchPhaseMoved at:CGPointMake(20, 80)];
+    NSEvent *upW = next_input(), *downS = next_input();
+    assert(upW.type == NSEventTypeKeyUp && upW.keyCode == 13 && downS.type == NSEventTypeKeyDown && downS.keyCode == 1);
+    UIView *stickBase = [controls valueForKey:@"_stickBase"];
+    assert(stickBase.superview == hostView && !stickBase.hidden && !stickBase.userInteractionEnabled);
+    // Cancelling (a rotation, switching apps) releases the held keys and the drawn stick.
+    [controls cancelTouches];
+    NSEvent *upA = next_input(), *upS = next_input();
+    assert(upA.type == NSEventTypeKeyUp && upS.type == NSEventTypeKeyUp && upA.keyCode + upS.keyCode == 1);
+    assert(stickBase.hidden);
+    [controls stickPhase:UITouchPhaseBegan at:CGPointMake(50, 50)];
+    [controls stickPhase:UITouchPhaseMoved at:CGPointMake(90, 50)];
+    assert(next_input().keyCode == 2);
+    [controls stickPhase:UITouchPhaseEnded at:CGPointMake(90, 50)];
+    stickKey = next_input();
+    assert(stickKey.type == NSEventTypeKeyUp && stickKey.keyCode == 2 && stickBase.hidden);
+    // The right half's tap is a left click where the pointer is, not where the finger is.
+    [host touchMoveBy:CGPointMake(-10000, 10000)];
+    assert(next_input().type == NSEventTypeMouseMoved);
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    [controls padFingers:1 at:CGPointMake(180, 90) time:now];
+    [controls padFingers:0 at:CGPointZero time:now + 0.05];
+    // A tap's release follows its press after a click's length, not at once.
+    NSEvent *tapDown = next_input();
+    assert(![NSApp nextEventMatchingMask:UINT64_MAX untilDate:NSDate.distantPast inMode:NSDefaultRunLoopMode dequeue:NO]);
+    [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.15]];
+    NSEvent *tapUp = next_input();
+    assert(tapDown.type == NSEventTypeLeftMouseDown && tapUp.type == NSEventTypeLeftMouseUp);
+    assert(CGPointEqualToPoint(tapDown.locationInWindow, CGPointMake(0, 1)) && CGPointEqualToPoint(tapUp.locationInWindow, CGPointMake(0, 1)));
+    // The side strip: a column in it and one mirroring it at the other edge.
+    // On the right Escape, Tab, keys 1 to 5 and Jump; on the left keyboard,
+    // stick, trackpad, Shift and keys 6 to 0. Shrunk, then hidden from the bottom
+    // when they do not fit; a key button holds its key while touched.
+    // (UIControl actions need a UIApplication, so the handlers are called directly.)
+    assert(!controls.vertical && controls.layout.columns == 0);
+    NSArray<UIButton *> *quick = [controls valueForKey:@"_quickButtons"];
+    UIButton *jump = [controls valueForKey:@"_jumpButton"], *escape = [controls valueForKey:@"_escapeButton"], *tab = [controls valueForKey:@"_tabButton"];
+    UIButton *keyboardButton = [controls valueForKey:@"_keyboardButton"];
+    assert(quick.count == 10 && quick[0].hidden && quick[9].hidden && escape.hidden && tab.hidden && !jump.hidden);
+    [controls removeFromSuperview];   // free of the host's row constraints
+    controls.translatesAutoresizingMaskIntoConstraints = YES;
+    controls.frame = CGRectMake(0, 0, 600, 300);
+    controls.layout = AKTouchLayoutFor(controls.frame.size, UIEdgeInsetsZero, CGRectMake(556, 0, 44, 300));
+    [controls layoutIfNeeded];
+    assert(controls.vertical);
+    // 300 points: eight buttons a column shrink to 34 on a 40-point pitch, and seven fit.
+    assert(CGRectEqualToRect(escape.frame, CGRectMake(561, 0, 34, 34)) && tab.frame.origin.y == 40);
+    assert(quick[0].frame.origin.y == 80 && quick[1].frame.origin.y == 120 && quick[4].frame.origin.y == 240 && CGRectGetMidX(quick[4].frame) == 578);
+    assert(jump.hidden && jump.frame.origin.y == 280 && CGRectGetMidX(jump.frame) == 578);
+    assert(CGRectGetMidX(keyboardButton.frame) == 22 && keyboardButton.frame.origin.y == 0);
+    UIButton *shift = [controls valueForKey:@"_shiftButton"];
+    assert(!shift.hidden && CGRectGetMidX(shift.frame) == 22 && shift.frame.origin.y == 120);
+    assert(CGRectGetMidX(quick[5].frame) == 22 && quick[5].frame.origin.y == 160 && !quick[7].hidden && quick[8].hidden);
+    // Shift is held while touched: the key's press and release, once each,
+    // with the modifier on what is sent meanwhile.
+    [(id)controls quickKeyDown:shift];
+    [(id)controls quickKeyDown:shift];
+    NSEvent *shiftKey = next_input();
+    assert(shiftKey.type == NSEventTypeFlagsChanged && shiftKey.keyCode == 56 && (shiftKey.modifierFlags & NSEventModifierFlagShift));
+    [(id)controls quickKeyDown:quick[5]];
+    shiftKey = next_input();
+    assert(shiftKey.type == NSEventTypeKeyDown && (shiftKey.modifierFlags & NSEventModifierFlagShift));
+    [(id)controls quickKeyUp:quick[5]];
+    (void)next_input();
+    [(id)controls quickKeyUp:shift];
+    shiftKey = next_input();
+    assert(shiftKey.type == NSEventTypeFlagsChanged && !(shiftKey.modifierFlags & NSEventModifierFlagShift));
+    assert([controls pointInside:CGPointMake(578, 130) withEvent:nil] && ![controls pointInside:CGPointMake(578, 157) withEvent:nil]);
+    assert(![controls pointInside:CGPointMake(578, 290) withEvent:nil] && ![controls pointInside:CGPointMake(300, 150) withEvent:nil]);
+    assert([controls pointInside:CGPointMake(22, 20) withEvent:nil]);
+    [(id)controls quickKeyDown:quick[1]];
+    [(id)controls quickKeyDown:quick[1]];
+    NSEvent *quickKey = next_input();
+    assert(quickKey.type == NSEventTypeKeyDown && quickKey.keyCode == 19 && [quickKey.characters isEqual:@"2"]);
+    [(id)controls quickKeyUp:quick[1]];
+    quickKey = next_input();
+    assert(quickKey.type == NSEventTypeKeyUp && quickKey.keyCode == 19);
+    // Escape and Tab (target), held while touched.
+    for (UIButton *button in @[escape, tab]) {
+        [(id)controls quickKeyDown:button];
+        quickKey = next_input();
+        assert(quickKey.type == NSEventTypeKeyDown && quickKey.keyCode == (button == escape ? 53 : 48));
+        assert([quickKey.characters isEqual:button == escape ? @"\x1b" : @"\t"]);
+        [(id)controls quickKeyUp:button];
+        assert(next_input().type == NSEventTypeKeyUp);
+    }
+    // The toggles are not key buttons.
+    [(id)controls quickKeyDown:keyboardButton];
+    assert(![NSApp nextEventMatchingMask:UINT64_MAX untilDate:NSDate.distantPast inMode:NSDefaultRunLoopMode dequeue:NO]);
+    // Room for all at full size (nine on the left): Jump at the bottom of the right column, holding Space.
+    controls.frame = CGRectMake(0, 0, 600, 480);
+    controls.layout = AKTouchLayoutFor(controls.frame.size, UIEdgeInsetsZero, CGRectMake(556, 0, 44, 480)); [controls layoutIfNeeded];
+    assert(!jump.hidden && CGRectEqualToRect(jump.frame, CGRectMake(556, 364, 44, 44)) && !quick[9].hidden);
+    [(id)controls quickKeyDown:jump];
+    quickKey = next_input();
+    assert(quickKey.type == NSEventTypeKeyDown && quickKey.keyCode == 49 && [quickKey.characters isEqual:@" "]);
+    [(id)controls quickKeyUp:jump];
+    assert(next_input().type == NSEventTypeKeyUp);
+    [(id)controls quickKeyDown:quick[9]];
+    quickKey = next_input();
+    assert(quickKey.keyCode == 29 && [quickKey.charactersIgnoringModifiers isEqual:@"0"]);
+    [(id)controls quickKeyUp:quick[9]];
+    assert(next_input().type == NSEventTypeKeyUp);
+    // With the strip on the left the columns keep their sides.
+    controls.layout = AKTouchLayoutFor(controls.frame.size, UIEdgeInsetsZero, CGRectMake(0, 0, 44, 480)); [controls layoutIfNeeded];
+    assert(CGRectGetMidX(jump.frame) == 578 && CGRectGetMidX(keyboardButton.frame) == 22);
+    [(id)controls quickKeyDown:quick[0]];
+    assert(next_input().keyCode == 18);
+    // The view's bottom edge follows the iOS keyboard, and UIKit can leave it
+    // raised: without the keyboard open, no button moves or hides for it.
+    CGRect jumpFrame = jump.frame;
+    controls.frame = CGRectMake(0, 0, 600, 200); [controls layoutIfNeeded];
+    assert(!controls.keyboardVisible && !jump.hidden && CGRectEqualToRect(jump.frame, jumpFrame) && !quick[9].hidden);
+    assert([controls pointInside:CGPointMake(578, 380) withEvent:nil]);
+    controls.frame = CGRectMake(0, 0, 600, 480); [controls layoutIfNeeded];
+    // Leaving the column releases a held key exactly once.
+    controls.layout = AKTouchLayoutFor(CGSizeMake(300, 480), UIEdgeInsetsZero, CGRectNull); [controls layoutIfNeeded];
+    quickKey = next_input();
+    assert(quickKey.type == NSEventTypeKeyUp && quickKey.keyCode == 18 && quick[0].hidden && quick[5].hidden && escape.hidden);
+    assert(!jump.hidden && CGRectEqualToRect(jump.frame, CGRectMake(0, 0, 44, 44)));
+    [(id)controls quickKeyUp:quick[0]];
+    assert(![NSApp nextEventMatchingMask:UINT64_MAX untilDate:NSDate.distantPast inMode:NSDefaultRunLoopMode dequeue:NO]);
+    controls.trackpadEnabled = NO;
+    assert(!controls.stickEnabled && !hostView.multipleTouchEnabled);
 
     // Windows are numbered once each; with none on screen, none is found.
     assert(window.windowNumber > 0 && other.windowNumber != window.windowNumber && panel.windowNumber != other.windowNumber);
     assert([NSWindow windowNumbersWithOptions:0].count == 0 && [NSWindow windowNumberAtPoint:CGPointMake(1, 1) belowWindowWithWindowNumber:0] == 0);
+    [window ak_order:1 relativeTo:0];
+    [other ak_order:1 relativeTo:window.windowNumber];
+    [panel ak_order:-1 relativeTo:other.windowNumber];
+    assert(([NSApp.windows isEqualToArray:@[window,panel,other]]));
+    [window ak_order:1 relativeTo:other.windowNumber];
+    assert(([NSApp.windows isEqualToArray:@[panel,other,window]]));
+    [window ak_order:-1 relativeTo:0];
+    assert(([NSApp.windows isEqualToArray:@[window,panel,other]]));
+    [window ak_order:1 relativeTo:window.windowNumber];
+    assert(([NSApp.windows isEqualToArray:@[window,panel,other]]));
+    assert(NSApp.keyWindow==nil && NSApp.mainWindow==nil);
+    [window close]; [panel close]; [other close];
+    assert(NSApp.windows.count==0);
+    // Retiring a game removes only its windows, leaving Steam's ordering intact.
+    NSWindow *steam=[[NSWindow alloc] initWithContentRect:CGRectZero styleMask:0 backing:0 defer:NO];
+    NSWindow *game=[[NSWindow alloc] initWithContentRect:CGRectZero styleMask:0 backing:0 defer:NO];
+    AKSetWindowProcess(steam,1); AKSetWindowProcess(game,3);
+    [steam ak_order:1 relativeTo:0]; [game ak_order:1 relativeTo:0];
+    LayerView *retiredView=[[LayerView alloc] initWithFrame:CGRectZero];
+    game.contentView=retiredView;
+    LayerView *retiredChild=[LayerView new], *survivingObserver=[LayerView new];
+    [retiredView addSubview:retiredChild];
+    for (LayerView *view in @[retiredView,retiredChild,survivingObserver])
+        [NSNotificationCenter.defaultCenter addObserver:view selector:@selector(fixtureNotification:) name:@"fixture-screen-change" object:nil];
+    [NSNotificationCenter.defaultCenter postNotificationName:@"fixture-screen-change" object:nil];
+    assert(retiredView.notifications==1 && retiredChild.notifications==1 && survivingObserver.notifications==1);
+    retiredView.needsDisplay=YES; // work queued before retirement
+    FixtureKeyResponder *retiredResponder=[FixtureKeyResponder new];
+    assert([game makeFirstResponder:retiredResponder]);
+    NSEvent *lateKey=[NSEvent new]; lateKey.type=NSEventTypeKeyDown; lateKey.window=game;
+    [app sendEvent:lateKey]; assert(retiredResponder.downs==1);
+    extern bool AKProcessRetirementComplete(size_t);
+    AKConfigureProcessCallbacks(4,NULL);
+    assert(!AKProcessRetirementComplete(3));
+    assert(AKEnterProcessCallback(3));
+    AKGuestProcessDidExit(3);
+    assert(!AKProcessRetirementComplete(3));
+    AKLeaveProcessCallback(3);
+    assert(AKProcessRetirementComplete(3));
+    [NSNotificationCenter.defaultCenter postNotificationName:@"fixture-screen-change" object:nil];
+    assert(retiredView.notifications==1 && retiredChild.notifications==1 && survivingObserver.notifications==2);
+    [NSNotificationCenter.defaultCenter removeObserver:survivingObserver];
+    [app sendEvent:lateKey]; [game sendEvent:lateKey];
+    assert(retiredResponder.downs==1);
+    CGRect retiredFrame=retiredView.frame;
+    [game ak_hostBoundsChanged:CGRectMake(0,0,321,123)];
+    assert(CGRectEqualToRect(retiredView.frame,retiredFrame));
+    [retiredView displayIfNeeded];
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode,0.01,false);
+    assert(retiredView.updates==0);
+    // The surviving process still receives events.
+    assert([steam makeFirstResponder:retiredResponder]); lateKey.window=steam;
+    [app sendEvent:lateKey]; assert(retiredResponder.downs==2);
+    assert(([NSApp.windows isEqualToArray:@[steam]]));
+    [game orderFront:nil];
+    assert(([NSApp.windows isEqualToArray:@[steam]]));
+    AKGuestProcessDidExit(3); // duplicate exit is harmless
+    assert(NSApp.windows.count==1);
+    [steam close];
     // Modifier keys: a key's press and release set and clear it, left and right
     // apart (device bits); the flag stays while either side is held.
     const NSEventModifierFlags LeftOption = 0x20, RightOption = 0x40, LeftCommand = 0x08, LeftShift = 0x02;
@@ -296,5 +754,47 @@ int main(void) { @autoreleasepool {
            (NSEventModifierFlagShift | LeftShift | NSEventModifierFlagCapsLock));
     assert(AKModifiersReconciled(held, 0) == 0);
     assert(AKModifiersReconciled(AKModifiersAfterKey(0, 0xE6, YES), NSEventModifierFlagOption) == (NSEventModifierFlagOption | RightOption));
-    puts("display pass, frame rects, panels, tracking areas, layer placement, contents scale, window ordering, Quartz events, window numbers and modifier keys: PASS");
+
+    // A view given a new layer shows it where the old one was: a game that
+    // makes a new Metal layer for its view (World of Warcraft, when the
+    // graphics card is chosen) must not be left drawing into a layer off screen.
+    NSWindow *gameWindow = [[NSWindow alloc] initWithContentRect:CGRectMake(0, 0, 200, 100) styleMask:0 backing:0 defer:NO];
+    UIView *gameHost = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 200, 100)];
+    UIView *overlay = [UIView new]; [gameHost addSubview:overlay];
+    [gameWindow setValue:gameHost forKey:@"host"];
+    NSView *gameView = [[NSView alloc] initWithFrame:CGRectMake(0, 0, 200, 100)];
+    gameWindow.contentView = gameView;
+    NSView *below = [[NSView alloc] initWithFrame:CGRectMake(0, 0, 10, 10)], *above = [[NSView alloc] initWithFrame:CGRectMake(0, 0, 10, 10)];
+    [gameView addSubview:below]; [gameView addSubview:above];
+    CALayer *firstLayer = gameView.layer;
+    assert(firstLayer.superlayer == gameHost.layer);
+    NSUInteger place = [gameHost.layer.sublayers indexOfObjectIdenticalTo:firstLayer];
+    CALayer *secondLayer = [CALayer layer];
+    gameView.layer = secondLayer;
+    assert(gameView.layer == secondLayer && !firstLayer.superlayer);
+    assert(secondLayer.superlayer == gameHost.layer);
+    assert([gameHost.layer.sublayers indexOfObjectIdenticalTo:secondLayer] == place);
+    assert(CGRectEqualToRect(secondLayer.frame, gameView.frame));
+    assert(secondLayer.contentsScale == gameWindow.backingScaleFactor);
+    assert(secondLayer.sublayers.count == 2 && secondLayer.sublayers[0] == below.layer && secondLayer.sublayers[1] == above.layer);
+    assert(firstLayer.sublayers.count == 0);
+    // The same layer again changes nothing.
+    gameView.layer = secondLayer;
+    assert(secondLayer.superlayer == gameHost.layer && secondLayer.sublayers.count == 2);
+    // A subview's layer keeps its place among its siblings' layers.
+    CALayer *belowLayer = [CALayer layer];
+    below.layer = belowLayer;
+    assert(secondLayer.sublayers.count == 2 && secondLayer.sublayers[0] == belowLayer && secondLayer.sublayers[1] == above.layer);
+    // No layer, then one again: the view comes back where it belongs.
+    below.layer = nil;
+    assert(!belowLayer.superlayer && secondLayer.sublayers.count == 1);
+    below.layer = belowLayer;
+    assert(secondLayer.sublayers.count == 2 && secondLayer.sublayers[0] == belowLayer && secondLayer.sublayers[1] == above.layer);
+    gameView.layer = nil;
+    assert(!secondLayer.superlayer && !belowLayer.superlayer && !above.layer.superlayer);
+    CALayer *thirdLayer = [CALayer layer];
+    gameView.layer = thirdLayer;
+    assert(thirdLayer.superlayer == gameHost.layer);
+    assert(thirdLayer.sublayers.count == 2 && thirdLayer.sublayers[0] == belowLayer && thirdLayer.sublayers[1] == above.layer);
+    puts("display pass, frame rects, panels, tracking areas, layer placement, layer replacement, contents scale, window ordering, Quartz events, window numbers and modifier keys: PASS");
 } }

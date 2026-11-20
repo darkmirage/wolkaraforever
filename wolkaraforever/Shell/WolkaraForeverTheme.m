@@ -1,11 +1,59 @@
 #import "WolkaraForeverTheme.h"
 #import "WolkaraForeverLog.h"
 
-UIColor *WKInk(void)   { return [UIColor colorWithRed:0.015 green:0.025 blue:0.045 alpha:1]; }
-UIColor *WKGold(void)  { return [UIColor colorWithRed:0.90  green:0.72  blue:0.35  alpha:1]; }
-UIColor *WKMuted(void) { return [UIColor colorWithRed:0.62  green:0.68  blue:0.75  alpha:1]; }
+// Measured against WKGrouped: gold 9.9:1, muted 9.0:1, the words on a gold button 9.8:1.
+UIColor *WKInk(void)   { return [UIColor colorWithRed:0.025 green:0.045 blue:0.075 alpha:1]; }
+UIColor *WKGold(void)  { return [UIColor colorWithRed:0.89  green:0.722 blue:0.40  alpha:1]; }
+UIColor *WKMuted(void) { return [UIColor colorWithRed:0.66  green:0.72  blue:0.78  alpha:1]; }
 UIColor *WKPanel(void) { return [UIColor colorWithWhite:1 alpha:0.08]; }
-UIColor *WKOnGold(void){ return [UIColor colorWithRed:0.08  green:0.065 blue:0.035 alpha:1]; }
+UIColor *WKOnGold(void){ return [UIColor colorWithRed:0.106 green:0.078 blue:0.031 alpha:1]; }
+
+UIColor *WKInkTop(void)        { return [UIColor colorWithRed:0.035 green:0.085 blue:0.13 alpha:1]; }
+UIColor *WKInkBottom(void)     { return [UIColor colorWithRed:0.02  green:0.03  blue:0.055 alpha:1]; }
+UIColor *WKGrouped(void)       { return [UIColor colorWithRed:0.055 green:0.085 blue:0.125 alpha:1]; }
+UIColor *WKElevated(void)      { return [UIColor colorWithRed:0.07  green:0.10  blue:0.14 alpha:1]; }
+UIColor *WKText(void)          { return [UIColor colorWithWhite:0.96 alpha:1]; }
+UIColor *WKDisabled(void)      { return [UIColor colorWithWhite:0.55 alpha:1]; }
+UIColor *WKDisabledFill(void)  { return [UIColor colorWithWhite:0.28 alpha:1]; }
+UIColor *WKDisabledOnFill(void){ return [UIColor colorWithWhite:0.62 alpha:1]; }
+UIColor *WKWash(void)          { return [UIColor colorWithWhite:1 alpha:0.055]; }
+UIColor *WKSelectionWash(void) { return [UIColor colorWithWhite:1 alpha:0.12]; }
+UIColor *WKGoldDeep(void)     { return [UIColor colorWithRed:0.50  green:0.39  blue:0.17 alpha:1]; }
+UIColor *WKScrim(void)         { return [UIColor colorWithWhite:0 alpha:0.55]; }
+
+UIFont *WKFont(UIFontTextStyle style, UIFontWeight weight) {
+    UIFontDescriptor *descriptor=[UIFontDescriptor preferredFontDescriptorWithTextStyle:style
+        compatibleWithTraitCollection:[UITraitCollection traitCollectionWithPreferredContentSizeCategory:
+            UIContentSizeCategoryLarge]];
+    return [[UIFontMetrics metricsForTextStyle:style]
+        scaledFontForFont:[UIFont systemFontOfSize:descriptor.pointSize weight:weight]];
+}
+
+void WKAdoptAppearance(UIWindow *window) {
+    window.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;
+    window.tintColor=WKGold();
+}
+
+void WKPlayHaptic(WKHaptic haptic) {
+    switch (haptic) {
+        case WKHapticPrimary: {
+            UIImpactFeedbackGenerator *generator=[[UIImpactFeedbackGenerator alloc]
+                initWithStyle:UIImpactFeedbackStyleMedium];
+            [generator impactOccurred];
+            break;
+        }
+        case WKHapticSuccess:
+        case WKHapticFailure: {
+            UINotificationFeedbackGenerator *generator=[UINotificationFeedbackGenerator new];
+            [generator notificationOccurred:haptic==WKHapticSuccess
+                ? UINotificationFeedbackTypeSuccess : UINotificationFeedbackTypeError];
+            break;
+        }
+        case WKHapticSelection:
+            [[UISelectionFeedbackGenerator new] selectionChanged];
+            break;
+    }
+}
 
 UILabel *WKLabel(CGFloat size, UIFontWeight weight, UIColor *color) {
     UILabel *label=[UILabel new];

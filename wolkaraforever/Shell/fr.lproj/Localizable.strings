@@ -41,9 +41,9 @@
 "home.launcher.interfaceMode.message" = "Choisissez l’interface pilotée par ce lanceur. En changer n’installe, ne désactive, ne supprime et ne met jamais à jour un addon.";
 "home.launcher.interfaceMode.auto" = "Automatique";
 "home.launcher.interfaceMode.auto.value" = "Automatique (%@)";
-"home.launcher.interfaceMode.ipados" = "iPadOS";
-"home.launcher.interfaceMode.ios" = "iOS";
-"home.launcher.interfaceMode.iosduo" = "iOS sur Duo";
+"home.launcher.interfaceMode.ipados" = "iPad";
+"home.launcher.interfaceMode.ios" = "iPhone";
+"home.launcher.interfaceMode.iosduo" = "iPhone Duo";
 "home.launcher.interfaceSetup.row" = "Modifier la disposition des commandes";
 "home.launcher.interfaceSetup.title" = "Disposition des commandes";
 /* Les trois lignes qui étaient auparavant dans une seule feuille. */
@@ -136,6 +136,7 @@
 "home.action.close" = "Fermer WolkaraForever";
 "home.action.retry" = "Réessayer";
 "home.status.updating" = "Mise à jour du jeu…";
+"home.action.downloading" = "Téléchargement · %@";
 "home.action.updating" = "Mise à jour…";
 "home.status.checking" = "Recherche de mises à jour…";
 "home.status.checking.detail" = "Comparaison de la dernière version avec votre copie installée.";
@@ -637,7 +638,7 @@
 "addons.remove" = "Retirer de l’appareil";
 
 /* ---- Voix et dictée ---- */
-"voice.title" = "Configuration des touches et boutons de manette";
+"voice.title" = "Bouton pour parler";
 "voice.test.title" = "Tester la voix";
 "voice.test.open" = "Tester la dictée";
 "voice.intro" = "Rien ne se déclenche tout seul ici. Tant que ce réglage n’est pas activé et qu’aucun bouton n’est choisi, le micro n’est jamais ouvert et aucune manette ne change de comportement.";
@@ -689,7 +690,7 @@
 "voice.language.french" = "Français";
 "voice.language.spanish" = "Espagnol";
 "voice.language.unavailable" = "%@ ne peut pas être reconnu sur cet iPad ; Système a donc été utilisé pour cette prise.";
-"touchpad.title" = "Configuration du pavé tactile de la manette";
+"touchpad.title" = "Pavé tactile de la manette";
 "touchpad.intro" = "Activez cette option seulement si vous voulez que le pavé tactile d’une manette connectée contrôle le pointeur. Un doigt déplace, deux doigts font défiler et le clic physique agit comme un bouton de souris.";
 "touchpad.heading.pointer" = "Pointeur";
 "touchpad.enabled" = "Utiliser le pavé tactile comme souris";
@@ -871,3 +872,50 @@
 "login.stay.title" = "Rester connecté ?";
 "login.stay.message" = "Votre session web Battle.net sera enregistrée sur cet appareil afin que Jouer puisse se connecter sans votre mot de passe. Toute personne ayant accès à cet appareil ou aux données de l’app pourrait lancer le jeu en votre nom. Désactivez l’option ou utilisez « Effacer les données de connexion » pour la supprimer.";
 "login.stay.confirm" = "Rester connecté";
+
+/* The launcher's tabs and settings lists. */
+"tab.play" = "Jouer";
+"tab.addons" = "Addons";
+"tab.controls" = "Commandes";
+"tab.settings" = "Réglages";
+"section.addons" = "Vos addons";
+"section.addons.needsGame" = "Installez le jeu pour gérer ses addons.";
+"section.addonsFolder" = "Dossier des addons";
+"section.addonsFolder.footer" = "Une sauvegarde contient tout le dossier AddOns dans un fichier ZIP.";
+"section.interface" = "Interface en jeu";
+"section.interface.footer" = "Automatique choisit l’interface conçue pour cet appareil. En changer n’installe, ne supprime et ne met jamais à jour un addon.";
+"section.onscreen" = "Commandes à l’écran";
+"section.layout" = "Disposition des commandes";
+"section.input" = "Manette et voix";
+"section.game" = "Jeu";
+"section.app" = "App";
+"section.graphics" = "Graphismes et énergie";
+"section.gameInterface" = "Interface du jeu";
+"section.gameInterface.footer" = "Les sauvegardes contiennent vos dispositions, raccourcis et réglages d’addons du dossier WTF.";
+"section.support" = "Assistance";
+"row.edition" = "Édition";
+"row.region" = "Région et langue";
+"row.appLanguage" = "Langue de l’app";
+"row.battlenet" = "Connexion Battle.net";
+"row.addons.manage" = "Gérer les addons";
+"row.addons.recommended" = "Addons recommandés";
+"row.addons.folder" = "Ouvrir le dossier des addons";
+"row.addons.backup" = "Sauvegarder les addons";
+"row.addons.restore" = "Restaurer les addons";
+"row.permissions" = "Micro et reconnaissance vocale";
+"row.voice" = "Bouton pour parler";
+"row.touchpad" = "Pavé tactile de la manette";
+"row.interface.backup" = "Sauvegarder l’interface";
+"row.interface.restore" = "Restaurer l’interface";
+"row.interface.reset" = "Réinitialiser l’interface du jeu…";
+"row.render" = "Qualité du rendu";
+"row.device" = "Appareil";
+"row.graphics" = "Graphismes";
+"row.layout.create" = "Créer une disposition";
+"row.layout.edit" = "Modifier la disposition";
+"row.layout.restore" = "Restaurer une disposition";
+"row.layout.backup" = "Sauvegarder la disposition";
+"row.repair" = "Vérifier et réparer les fichiers";
+"row.diagnostics" = "Diagnostics et journaux";
+"row.developer" = "Options pour les développeurs";
+"row.about" = "À propos";

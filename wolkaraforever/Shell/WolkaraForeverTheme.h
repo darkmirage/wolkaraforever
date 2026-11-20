@@ -15,7 +15,8 @@
 
 /// The page behind everything.
 UIColor *WKInk(void);
-/// The accent: headings, selected controls, the Done button, primary actions.
+/// The accent: headings, selected controls, the Done button, primary actions. There is one gold;
+/// the launcher used to draw a second, paler one of its own.
 UIColor *WKGold(void);
 /// Secondary text, and anything that explains rather than says.
 UIColor *WKMuted(void);
@@ -23,6 +24,47 @@ UIColor *WKMuted(void);
 UIColor *WKPanel(void);
 /// What sits on top of the accent, for filled buttons.
 UIColor *WKOnGold(void);
+
+/// The launcher page's gradient, top and bottom; WKInk sits between them.
+UIColor *WKInkTop(void);
+UIColor *WKInkBottom(void);
+/// A grouped section on the ink: the launcher's cards.
+UIColor *WKGrouped(void);
+/// One step above a grouped section: a status well, an add-on row.
+UIColor *WKElevated(void);
+/// Primary text that is not the accent.
+UIColor *WKText(void);
+/// A row, icon or label that cannot be used right now. One grey, so a page in a transient
+/// state reads as one thing rather than a mix of dimmed and full-strength text.
+UIColor *WKDisabled(void);
+/// A disabled filled button: its fill, and the words on it.
+UIColor *WKDisabledFill(void);
+UIColor *WKDisabledOnFill(void);
+/// A light wash for a control's resting fill, and a stronger one for its selection.
+UIColor *WKWash(void);
+UIColor *WKSelectionWash(void);
+/// The filled part of a progress bar that carries white words: the gold, deep enough that the
+/// words read on it (5.1:1) as well as on the unfilled track (8.5:1).
+UIColor *WKGoldDeep(void);
+/// What dims the page behind something modal that is drawn by hand.
+UIColor *WKScrim(void);
+
+/// The system font at a text style, with a weight, scaled for Dynamic Type.
+UIFont *WKFont(UIFontTextStyle style, UIFontWeight weight);
+
+/// Every window the app's own pages draw in. Dark, once, on the window, so an alert, a menu, a
+/// share sheet or a document picker presented from any page matches the page: a style set on a
+/// page reaches its children but not what it presents.
+void WKAdoptAppearance(UIWindow *window);
+
+typedef NS_ENUM(NSInteger, WKHaptic) {
+    WKHapticPrimary,     // the page's one main action was pressed
+    WKHapticSuccess,     // something the person waited for finished
+    WKHapticFailure,     // something the person waited for failed
+    WKHapticSelection,   // a switch or a choice changed
+};
+/// The system's own feedback, for the few moments that deserve it.
+void WKPlayHaptic(WKHaptic haptic);
 
 /// A wrapping label in the launcher's body font at the given size.
 UILabel *WKLabel(CGFloat size, UIFontWeight weight, UIColor *color);

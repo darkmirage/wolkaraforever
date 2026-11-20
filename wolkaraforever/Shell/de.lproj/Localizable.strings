@@ -44,9 +44,9 @@
 "home.launcher.interfaceMode.message" = "Wähle die Oberfläche, die dieser Launcher steuert. Ein Wechsel installiert, deaktiviert, entfernt oder aktualisiert niemals ein Add-on.";
 "home.launcher.interfaceMode.auto" = "Automatisch";
 "home.launcher.interfaceMode.auto.value" = "Automatisch (%@)";
-"home.launcher.interfaceMode.ipados" = "iPadOS";
-"home.launcher.interfaceMode.ios" = "iOS";
-"home.launcher.interfaceMode.iosduo" = "iOS auf dem Duo";
+"home.launcher.interfaceMode.ipados" = "iPad";
+"home.launcher.interfaceMode.ios" = "iPhone";
+"home.launcher.interfaceMode.iosduo" = "iPhone Duo";
 "home.launcher.interfaceSetup.row" = "Steuerungslayout bearbeiten";
 "home.launcher.interfaceSetup.title" = "Steuerungslayout";
 /* Die drei Zeilen, die früher in einem einzigen Blatt versteckt waren. */
@@ -139,6 +139,7 @@
 "home.action.close" = "WolkaraForever schließen";
 "home.action.retry" = "Erneut versuchen";
 "home.status.updating" = "Ihr Spiel wird aktualisiert …";
+"home.action.downloading" = "Wird geladen · %@";
 "home.action.updating" = "Aktualisierung läuft …";
 "home.status.checking" = "Suche nach Aktualisierungen …";
 "home.status.checking.detail" = "Die neueste Version und Ihre installierte Kopie werden geprüft.";
@@ -635,7 +636,7 @@
 "addons.action.manage" = "Verwalten";
 "addons.manage.unmanaged" = "Dieses vorhandene Add-on wird von diesem Gerät entfernt.";
 /* ---- Voice and dictation ---- */
-"voice.title" = "Tasten und Controller-Buttons belegen";
+"voice.title" = "Sprechtaste";
 "voice.test.title" = "Sprache testen";
 "voice.test.open" = "Diktat testen";
 "voice.intro" = "Nichts hier geschieht von selbst. Solange die Funktion nicht eingeschaltet und eine Taste belegt ist, wird das Mikrofon nie geöffnet und kein Controller verhält sich anders.";
@@ -686,7 +687,7 @@
 "voice.language.french" = "Französisch";
 "voice.language.spanish" = "Spanisch";
 "voice.language.unavailable" = "%@ kann auf diesem iPad nicht erkannt werden, daher wurde für diesen Durchgang System verwendet.";
-"touchpad.title" = "Controller-Touchpad konfigurieren";
+"touchpad.title" = "Controller-Touchpad";
 "touchpad.intro" = "Schalten Sie dies nur ein, wenn das Touchpad eines verbundenen Controllers den Zeiger steuern soll. Ein Finger bewegt, zwei Finger scrollen und der physische Touchpad-Klick ist die Maustaste.";
 "touchpad.heading.pointer" = "Zeiger";
 "touchpad.enabled" = "Controller-Touchpad als Maus verwenden";
@@ -868,3 +869,50 @@
 "login.stay.title" = "Angemeldet bleiben?";
 "login.stay.message" = "Deine Battle.net-Websitzung wird auf diesem Gerät gespeichert, damit „Spielen“ ohne Passwort anmelden kann. Wer dieses Gerät oder seine App-Daten nutzen kann, könnte das Spiel als du starten. Schalte es aus oder nutze „Anmeldedaten löschen“, um sie zu entfernen.";
 "login.stay.confirm" = "Angemeldet bleiben";
+
+/* The launcher's tabs and settings lists. */
+"tab.play" = "Spielen";
+"tab.addons" = "Add-ons";
+"tab.controls" = "Steuerung";
+"tab.settings" = "Einstellungen";
+"section.addons" = "Deine Add-ons";
+"section.addons.needsGame" = "Installiere das Spiel, um seine Add-ons zu verwalten.";
+"section.addonsFolder" = "Add-on-Ordner";
+"section.addonsFolder.footer" = "Eine Sicherung enthält den ganzen AddOns-Ordner in einer ZIP-Datei.";
+"section.interface" = "Oberfläche im Spiel";
+"section.interface.footer" = "Automatisch wählt die Oberfläche für dieses Gerät. Ein Wechsel installiert, entfernt oder aktualisiert nie ein Add-on.";
+"section.onscreen" = "Bildschirmsteuerung";
+"section.layout" = "Controller-Layout";
+"section.input" = "Controller & Sprache";
+"section.game" = "Spiel";
+"section.app" = "App";
+"section.graphics" = "Grafik & Energie";
+"section.gameInterface" = "Spieloberfläche";
+"section.gameInterface.footer" = "Sicherungen enthalten Layouts, Tastenbelegungen und Add-on-Einstellungen aus dem WTF-Ordner.";
+"section.support" = "Hilfe";
+"row.edition" = "Edition";
+"row.region" = "Region & Sprache";
+"row.appLanguage" = "App-Sprache";
+"row.battlenet" = "Battle.net-Anmeldung";
+"row.addons.manage" = "Add-ons verwalten";
+"row.addons.recommended" = "Empfohlene Add-ons";
+"row.addons.folder" = "Add-on-Ordner öffnen";
+"row.addons.backup" = "Add-ons sichern";
+"row.addons.restore" = "Add-ons wiederherstellen";
+"row.permissions" = "Mikrofon & Spracherkennung";
+"row.voice" = "Sprechtaste";
+"row.touchpad" = "Controller-Touchpad";
+"row.interface.backup" = "Oberfläche sichern";
+"row.interface.restore" = "Oberfläche wiederherstellen";
+"row.interface.reset" = "Spieloberfläche zurücksetzen …";
+"row.render" = "Renderqualität";
+"row.device" = "Gerät";
+"row.graphics" = "Grafik";
+"row.layout.create" = "Layout erstellen";
+"row.layout.edit" = "Layout bearbeiten";
+"row.layout.restore" = "Layout wiederherstellen";
+"row.layout.backup" = "Layout sichern";
+"row.repair" = "Spieldateien prüfen & reparieren";
+"row.diagnostics" = "Diagnose & Protokolle";
+"row.developer" = "Entwickleroptionen";
+"row.about" = "Über";

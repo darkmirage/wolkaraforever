@@ -44,9 +44,9 @@
 "home.launcher.interfaceMode.message" = "Choose the interface this launcher drives. Changing it never installs, disables, removes or updates an add-on.";
 "home.launcher.interfaceMode.auto" = "Automatic";
 "home.launcher.interfaceMode.auto.value" = "Automatic (%@)";
-"home.launcher.interfaceMode.ipados" = "iPadOS";
-"home.launcher.interfaceMode.ios" = "iOS";
-"home.launcher.interfaceMode.iosduo" = "iOS on Duo";
+"home.launcher.interfaceMode.ipados" = "iPad";
+"home.launcher.interfaceMode.ios" = "iPhone";
+"home.launcher.interfaceMode.iosduo" = "iPhone Duo";
 "home.launcher.interfaceSetup.row" = "Edit Controller Layout";
 "home.launcher.interfaceSetup.title" = "Controller Layout";
 /* The three rows that used to be inside the one Controller Layout sheet. */
@@ -139,6 +139,7 @@
 "home.action.close" = "Close WolkaraForever";
 "home.action.retry" = "Try again";
 "home.status.updating" = "Updating your game…";
+"home.action.downloading" = "Downloading · %@";
 "home.action.updating" = "Updating…";
 "home.status.checking" = "Checking for updates…";
 "home.status.checking.detail" = "Checking the latest version and your installed copy.";
@@ -637,7 +638,7 @@
 "addons.action.manage" = "Manage";
 "addons.manage.unmanaged" = "This existing add-on will be removed from this device.";
 /* ---- Voice and dictation ---- */
-"voice.title" = "Key / Controller Button Configuration";
+"voice.title" = "Push-to-Talk Button";
 "voice.test.title" = "Test Voice";
 "voice.test.open" = "Test Dictation";
 "voice.intro" = "Nothing here happens on its own. Until this is switched on and a button is set, the microphone is never opened and no controller behaves any differently.";
@@ -689,7 +690,7 @@
 "voice.language.french" = "French";
 "voice.language.spanish" = "Spanish";
 "voice.language.unavailable" = "%@ cannot be recognised on this iPad, so System was used for that hold.";
-"touchpad.title" = "Controller Touchpad Configuration";
+"touchpad.title" = "Controller Touchpad";
 "touchpad.intro" = "Turn this on only when you want a connected controller’s touchpad to control the pointer. One finger moves, two fingers scroll, and the physical touchpad click is the mouse button.";
 "touchpad.heading.pointer" = "Pointer";
 "touchpad.enabled" = "Use controller touchpad as mouse";
@@ -871,3 +872,50 @@
 "login.stay.title" = "Stay signed in?";
 "login.stay.message" = "Your Battle.net web session will be saved on this device so Play can sign in without your password. Anyone who can use this device or its app data could start the game as you. Turn it off or use Clear sign-in data to remove it.";
 "login.stay.confirm" = "Stay signed in";
+
+/* The launcher's tabs and settings lists. */
+"tab.play" = "Play";
+"tab.addons" = "Add-ons";
+"tab.controls" = "Controls";
+"tab.settings" = "Settings";
+"section.addons" = "Your Add-ons";
+"section.addons.needsGame" = "Install the game to manage its add-ons.";
+"section.addonsFolder" = "Add-on Folder";
+"section.addonsFolder.footer" = "A backup holds the whole AddOns folder in one ZIP file.";
+"section.interface" = "In-Game Interface";
+"section.interface.footer" = "Automatic picks the interface made for this device. Changing it never installs, removes or updates an add-on.";
+"section.onscreen" = "On-Screen Controls";
+"section.layout" = "Controller Layout";
+"section.input" = "Controller & Voice";
+"section.game" = "Game";
+"section.app" = "App";
+"section.graphics" = "Graphics & Power";
+"section.gameInterface" = "Game Interface";
+"section.gameInterface.footer" = "Backups hold your layouts, key bindings and add-on settings from the WTF folder.";
+"section.support" = "Support";
+"row.edition" = "Edition";
+"row.region" = "Region & Language";
+"row.appLanguage" = "App Language";
+"row.battlenet" = "Battle.net Sign-In";
+"row.addons.manage" = "Manage Add-ons";
+"row.addons.recommended" = "Recommended Add-ons";
+"row.addons.folder" = "Open Add-on Folder";
+"row.addons.backup" = "Back Up Add-ons";
+"row.addons.restore" = "Restore Add-ons";
+"row.permissions" = "Microphone & Speech";
+"row.voice" = "Push-to-Talk Button";
+"row.touchpad" = "Controller Touchpad";
+"row.interface.backup" = "Back Up Interface";
+"row.interface.restore" = "Restore Interface";
+"row.interface.reset" = "Reset Game Interface…";
+"row.render" = "Render Quality";
+"row.device" = "Device";
+"row.graphics" = "Graphics";
+"row.layout.create" = "Create Layout";
+"row.layout.edit" = "Edit Layout";
+"row.layout.restore" = "Restore Layout";
+"row.layout.backup" = "Back Up Layout";
+"row.repair" = "Verify & Repair Game Files";
+"row.diagnostics" = "Diagnostics & Logs";
+"row.developer" = "Developer Options";
+"row.about" = "About";

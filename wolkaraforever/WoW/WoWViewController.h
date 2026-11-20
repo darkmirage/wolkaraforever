@@ -36,5 +36,14 @@ NS_ASSUME_NONNULL_BEGIN
 // Development preview: the Add-on Manager, already on Browse. Used by
 // tools, never by a normal launch.
 - (void)previewAddonBrowser;
+/// The four tabs' pages, in order: Play, Add-ons, Controls, Settings. A tab that is not showing
+/// has no window, so a fixture or a self-test that looks a row up by identifier searches these.
+@property(nonatomic, readonly) NSArray<UIView *> *pageViews;
+/// Brings forward the tab that holds `view` and scrolls it into sight.
+- (void)revealView:(UIView *)view;
+- (void)selectTab:(NSUInteger)index;
+@property(nonatomic, readonly) NSUInteger selectedTab;
+/// The pull-down menu a choice row opens, as it would be built now. Empty for a row with none.
+- (NSArray<UIMenuElement *> *)menuElementsForRow:(NSString *)identifier;
 @end
 NS_ASSUME_NONNULL_END

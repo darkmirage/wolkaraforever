@@ -15,7 +15,7 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title=WKLocalized(@"touchpad.title").uppercaseString;
+    self.title=WKLocalized(@"touchpad.title");
     self.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;
     self.view.backgroundColor=WKInk();
     self.navigationItem.largeTitleDisplayMode=UINavigationItemLargeTitleDisplayModeNever;

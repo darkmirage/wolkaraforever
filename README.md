@@ -30,7 +30,7 @@ the unsigned External JIT package.
 
 - Download, resume, repair, update, and start a selected Forever client.
 - Choose game and app languages independently.
-- Choose an iPadOS or iOS on Duo interface.
+- Choose an iPad, iPhone or iPhone Duo interface; a phone picks its own automatically.
 - Manage supported add-ons and recover your interface safely.
 - Use touch, keyboard, controller, and optional dictation input.
 

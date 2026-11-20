@@ -47,7 +47,7 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = WKLocalized(@"voice.title").uppercaseString;
+    self.title = WKLocalized(@"voice.title");
     self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     self.view.backgroundColor = WKInk();
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;

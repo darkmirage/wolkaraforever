@@ -38,7 +38,13 @@ wolkaraforever/Shell/artwork/tinted.svg artwork/wolkaraforever/tinted.svg add
 wolkaraforever/Shell/artwork/wolkaraforever-icon-source.png artwork/wolkaraforever/wolkaraforever-icon-source.png add
 wolkaraforever/Shell/artwork/wolkaraforever-logo.png artwork/wolkaraforever/wolkaraforever-logo.png add
 wolkaraforever/Shell/de.lproj/Localizable.strings launcher/App/de.lproj/Localizable.strings add
+wolkaraforever/Shell/de.lproj/Localizable.strings launcher/App/de.lproj/Localizable.strings add
+wolkaraforever/Shell/de.lproj/Localizable.strings launcher/App/de.lproj/Localizable.strings add
 wolkaraforever/Shell/en.lproj/Localizable.strings launcher/App/en.lproj/Localizable.strings add
+wolkaraforever/Shell/en.lproj/Localizable.strings launcher/App/en.lproj/Localizable.strings add
+wolkaraforever/Shell/en.lproj/Localizable.strings launcher/App/en.lproj/Localizable.strings add
+wolkaraforever/Shell/fr.lproj/Localizable.strings launcher/App/fr.lproj/Localizable.strings add
+wolkaraforever/Shell/fr.lproj/Localizable.strings launcher/App/fr.lproj/Localizable.strings add
 wolkaraforever/Shell/fr.lproj/Localizable.strings launcher/App/fr.lproj/Localizable.strings add
 wolkaraforever/Shell/main.m launcher/App/main.m replace
 wolkaraforever/Shell/tests/test_background_pacing.m tests/test_background_pacing.m add
@@ -81,6 +87,8 @@ wolkaraforever/WoW/ForeverUI.m launcher/WoW/ForeverUI.m add
 wolkaraforever/WoW/ForeverUIArchive.swift launcher/WoW/ForeverUIArchive.swift add
 wolkaraforever/WoW/Installation.h launcher/WoW/Installation.h add
 wolkaraforever/WoW/Installation.m launcher/WoW/Installation.m add
+wolkaraforever/WoW/LauncherList.h launcher/WoW/LauncherList.h add
+wolkaraforever/WoW/LauncherList.m launcher/WoW/LauncherList.m add
 wolkaraforever/WoW/Manifest.h launcher/WoW/Manifest.h add
 wolkaraforever/WoW/Manifest.m launcher/WoW/Manifest.m add
 wolkaraforever/WoW/UpdateLock.h launcher/WoW/UpdateLock.h add
@@ -121,8 +129,12 @@ wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-home.png tests
 wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-launcher-duo.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-launcher-duo.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-launcher-ipados.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-launcher-ipados.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-running.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-running.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-settings-de-large-text.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-settings-de-large-text.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-starting.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-starting.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-startup-failed.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-startup-failed.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-tab-addons.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-tab-addons.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-tab-controls.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-tab-controls.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-tab-settings.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-tab-settings.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-voice-de.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-voice-de.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/ipad-pro-13-m5/wow-voice-test-de.png tests/ui-baselines/launcher/ipad-pro-13-m5/wow-voice-test-de.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/addons-popup.png tests/ui-baselines/launcher/iphone-duo/addons-popup.png add
@@ -138,8 +150,12 @@ wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-home.png tests/ui-
 wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-launcher-duo.png tests/ui-baselines/launcher/iphone-duo/wow-launcher-duo.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-launcher-ipados.png tests/ui-baselines/launcher/iphone-duo/wow-launcher-ipados.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-running.png tests/ui-baselines/launcher/iphone-duo/wow-running.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-settings-de-large-text.png tests/ui-baselines/launcher/iphone-duo/wow-settings-de-large-text.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-starting.png tests/ui-baselines/launcher/iphone-duo/wow-starting.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-startup-failed.png tests/ui-baselines/launcher/iphone-duo/wow-startup-failed.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-tab-addons.png tests/ui-baselines/launcher/iphone-duo/wow-tab-addons.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-tab-controls.png tests/ui-baselines/launcher/iphone-duo/wow-tab-controls.png add
+wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-tab-settings.png tests/ui-baselines/launcher/iphone-duo/wow-tab-settings.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-voice-de.png tests/ui-baselines/launcher/iphone-duo/wow-voice-de.png add
 wolkaraforever/WoW/tests/ui-baselines/launcher/iphone-duo/wow-voice-test-de.png tests/ui-baselines/launcher/iphone-duo/wow-voice-test-de.png add
 wolkaraforever/WoW/tests/wow_installation_fixture.h tests/wow_installation_fixture.h add
@@ -155,6 +171,7 @@ wolkaraforever/Touch/ControllerPointer.h translation/AppKit/ControllerPointer.h 
 wolkaraforever/Touch/ControllerPointer.m translation/AppKit/ControllerPointer.m add
 wolkaraforever/Touch/Fonts.h translation/AppKit/Fonts.h add
 wolkaraforever/Touch/Fonts.m translation/AppKit/Fonts.m add
+wolkaraforever/Touch/HostOrientation.m translation/AppKit/HostOrientation.m add
 wolkaraforever/Touch/InterfaceMode.h translation/AppKit/InterfaceMode.h add
 wolkaraforever/Touch/InterfaceMode.h launcher/WoW/InterfaceMode.h add
 wolkaraforever/Touch/InterfaceMode.m translation/AppKit/InterfaceMode.m add

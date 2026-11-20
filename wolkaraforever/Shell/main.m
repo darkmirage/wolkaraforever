@@ -756,6 +756,7 @@ static NSString *AKAudioStateDescription(void) {
         self.wowController.showDiagnostics=^{ [weakSelf showDiagnostics]; };
         self.navigation=[[UINavigationController alloc] initWithRootViewController:self.wowController];
         self.window.rootViewController=self.navigation;
+        WKAdoptAppearance(self.window);
         [self.window makeKeyAndVisible];
         if (previewAddons) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6*NSEC_PER_SEC)),
                                           dispatch_get_main_queue(), ^{ [weakSelf.wowController previewAddonBrowser]; });
@@ -1374,7 +1375,7 @@ static NSString *AKAudioStateDescription(void) {
     closing = [[UIWindow alloc] initWithWindowScene:scene];
     closing.windowLevel = UIWindowLevelAlert + 1;
     UIView *root = [UIView new];
-    root.backgroundColor = [UIColor colorWithRed:0.025 green:0.045 blue:0.075 alpha:1];
+    root.backgroundColor = WKInk();
     closing.rootViewController = [UIViewController new];
     closing.rootViewController.view.backgroundColor = root.backgroundColor;
 
@@ -1394,13 +1395,13 @@ static NSString *AKAudioStateDescription(void) {
     instructions.text = WKLocalized(@"shell.closing.instructions");
     instructions.numberOfLines = 0;
     instructions.textAlignment = NSTextAlignmentCenter;
-    instructions.textColor = [UIColor colorWithRed:0.66 green:0.72 blue:0.78 alpha:1];
+    instructions.textColor = WKMuted();
     instructions.font = [UIFont systemFontOfSize:17 weight:UIFontWeightRegular];
 
     UILabel *countdown = [UILabel new];
     countdown.text = @"5";
     countdown.textAlignment = NSTextAlignmentCenter;
-    countdown.textColor = [UIColor colorWithRed:0.88 green:0.73 blue:0.43 alpha:1];
+    countdown.textColor = WKGold();
     countdown.font = [UIFont systemFontOfSize:96 weight:UIFontWeightThin];
     countdown.accessibilityIdentifier = @"wolkaraforever.closing.countdown";
 
@@ -1410,8 +1411,8 @@ static NSString *AKAudioStateDescription(void) {
     UIButton *closeNow = [UIButton buttonWithType:UIButtonTypeSystem];
     UIButtonConfiguration *closeConfiguration = UIButtonConfiguration.filledButtonConfiguration;
     closeConfiguration.title = WKLocalized(@"home.action.close");
-    closeConfiguration.baseBackgroundColor = [UIColor colorWithRed:0.88 green:0.73 blue:0.43 alpha:1];
-    closeConfiguration.baseForegroundColor = [UIColor colorWithRed:0.08 green:0.065 blue:0.035 alpha:1];
+    closeConfiguration.baseBackgroundColor = WKGold();
+    closeConfiguration.baseForegroundColor = WKOnGold();
     closeConfiguration.cornerStyle = UIButtonConfigurationCornerStyleMedium;
     closeConfiguration.contentInsets = NSDirectionalEdgeInsetsMake(14, 18, 14, 18);
     closeNow.configuration = closeConfiguration;

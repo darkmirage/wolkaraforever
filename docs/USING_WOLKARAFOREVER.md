@@ -1,14 +1,14 @@
 # Use WolkaraForever
 
-> Verified: 2026-11-16 · Source: `9680e63`
+> Verified: 2026-11-20 · Source: `1ca7769`
 
-Use the launcher to prepare Forever, configure the interface, and recover safely when a setting or add-on causes a problem.
+Use the launcher to prepare Forever, configure the interface, and recover safely when a setting or add-on causes a problem. The launcher has four tabs: **Play**, **Add-ons**, **Controls** and **Settings**.
 
 ![WolkaraForever home screen](screenshots/launcher-home.jpg)
 
 ## Set up and update your game
 
-1. On the home screen, select Forever, your region, and the game language.
+1. On the **Play** tab, tap the edition name at the top to choose Forever. Choose your region and the game language in **Settings › Game › Region & Language**.
 2. Start the download. The launcher can resume, verify, repair, and update recorded game data.
 3. Wait for the ready state before selecting **Play**.
 
@@ -20,7 +20,7 @@ The first time you start a game with no mode chosen, the launcher asks how to st
 
 ## Experimental Battle.net Login
 
-In **Game Settings Manager**, open **Battle.net Login (Experimental)**. It is off by default. Enabling it requires acknowledging that it is an experimental compatibility feature, not WolkaraForever's normal login path, and that you use it at your own risk.
+In **Settings › Game**, open **Battle.net Sign-In**. It is off by default. Enabling it requires acknowledging that it is an experimental compatibility feature, not WolkaraForever's normal login path, and that you use it at your own risk.
 
 When enabled, **Play** completes its usual readiness checks, then opens Battle.net's official sign-in page. Battle.net may hand the browser to your chosen HTTPS identity provider; verify that provider's address before entering credentials. Cancel leaves the game unstarted. A successful result is used once for the immediately following Forever launch. Passwords and authenticators remain on Battle.net's site, and WolkaraForever never saves launch tickets. By default the browser session lives in memory only, so you sign in again after the app restarts. Turn on **Stay signed in** to keep the Battle.net web session on this device: later **Play** presses then finish without your password. Anyone who can use the device or its app data could start the game as you while it is on. **Stop staying signed in** removes the saved session; **Disable experimental login** and **Clear sign-in data** remove both the in-memory and saved sessions and any pending result immediately.
 
@@ -28,15 +28,15 @@ This feature can stop working without notice. Do not include credentials, ticket
 
 ## Change app language or interface
 
-Open **Settings** to choose an app language. Open **Launcher Manager** to choose **iPadOS** or **iOS on Duo**. Interface selection changes the arrangement only; it does not change game data or add-ons.
+Choose the app language in **Settings › App Language**. Choose the in-game interface in **Controls › Interface Mode**: **Automatic**, **iPad**, **iPhone** or **iPhone Duo**; a phone starts at **Automatic** and an iPad at **iPad**. Interface selection changes the arrangement only; it does not change game data or add-ons.
 
 ## Optional network-health diagnostics
 
-In **Game Settings Manager**, choose **Arm network health for next launch** only when support asks for connection-health evidence. This experimental switch is off by default, is consumed by the next game launch, and stops automatically after 15 minutes. It records anonymous TCP state, latency, buffer and byte counters in the native log; it never records addresses, ports, host names, DNS, payloads, credentials, or game data. Use **Disarm** before starting the game to cancel it.
+In **Settings › Support › Developer Options**, choose **Arm network health for next launch** only when support asks for connection-health evidence. This experimental switch is off by default, is consumed by the next game launch, and stops automatically after 15 minutes. It records anonymous TCP state, latency, buffer and byte counters in the native log; it never records addresses, ports, host names, DNS, payloads, credentials, or game data. Use **Disarm** before starting the game to cancel it.
 
 ## Manage add-ons
 
-Open **Add-On Manager** to view recorded packages, install the bundled WolkaraRoue package, import a validated archive, or browse a supported provider. An optional provider key stays in the device Keychain. The app removes only add-ons it recorded as managed.
+On the **Add-ons** tab, open **Manage Add-ons** to view recorded packages, install the bundled WolkaraRoue package, import a validated archive, or browse a supported provider. An optional provider key stays in the device Keychain. The app removes only add-ons it recorded as managed.
 
 When an add-on folder includes manifests for several WoW clients, the manager uses the manifest explicitly named for Forever or declaring Forever’s interface to show its title and version. It still considers every manifest when reporting compatibility.
 
@@ -46,7 +46,7 @@ A provider tab without a key shows one **Set up access** row; opening it asks fo
 
 ## Back up or recover your interface
 
-Use **UI Manager** before large interface changes. **Gamepad UI** is first; its state is written to the active Forever `Config.wtf`. Create a backup before restoring a selected backup if the interface becomes unusable. **Reset to Default Wow UI Configuration** resets only graphics and display settings. Recovery does not replace the game installation.
+Use **Settings › Game Interface** before large interface changes: **Back Up Interface**, **Restore Interface**, **Open Settings Folder** and **Reset Game Interface…**. Create a backup before restoring a selected backup if the interface becomes unusable. **Reset Game Interface…** resets only graphics and display settings. **Gamepad UI**, in **Controls › On-Screen Controls**, is written to the active Forever `Config.wtf`. Recovery does not replace the game installation.
 
 ## Configure controls and voice
 
@@ -54,20 +54,20 @@ Use the touch toolbar, trackpad, keyboard, gamepad, physical keyboard, or contro
 
 The on-screen gamepad's settings include **Sticky triggers (LT/RT)**, off by default, for using a trigger as a modifier with one thumb. Tap LT or RT and it stays held, lit, until your next button press ends. Tap it twice quickly and it locks, outlined, until you tap it again. A slow second tap lets it go. Opening the settings or hiding the controls always releases it.
 
-A DualSense or DualShock 4 touchpad can move the game's pointer. In **Input Manager**, open **Controller Touchpad Configuration**. It is off until you turn it on and is saved on the iPad. One finger moves the pointer and two fingers scroll. Pressing the touchpad is the left mouse button, or the right button with two fingers on the pad, and pressing while you slide drags. Tapping without pressing does nothing, so a thumb resting on the pad does not click. The controller touchpad and a physical mouse or trackpad hand off when the controller contact ends; iPadOS's duplicate mouse stream for the controller surface is ignored while that contact or click is active. The page offers Slow, Normal and Fast speeds plus a live controller-touchpad test showing the reported finger count and coordinates. While this is on, the touchpad click is the mouse button only and cannot be chosen as a dictation trigger. The dictation test is inside **Key / Controller Button Configuration**. A DualSense Edge connected over Bluetooth can omit touchpad reports on iPadOS; use its USB-C connection when the live test remains empty.
+A DualSense or DualShock 4 touchpad can move the game's pointer. In **Controls › Controller & Voice**, open **Controller Touchpad**. It is off until you turn it on and is saved on the iPad. One finger moves the pointer and two fingers scroll. Pressing the touchpad is the left mouse button, or the right button with two fingers on the pad, and pressing while you slide drags. Tapping without pressing does nothing, so a thumb resting on the pad does not click. The controller touchpad and a physical mouse or trackpad hand off when the controller contact ends; iPadOS's duplicate mouse stream for the controller surface is ignored while that contact or click is active. The page offers Slow, Normal and Fast speeds plus a live controller-touchpad test showing the reported finger count and coordinates. While this is on, the touchpad click is the mouse button only and cannot be chosen as a dictation trigger. The dictation test is inside **Controls › Push-to-Talk Button**. A DualSense Edge connected over Bluetooth can omit touchpad reports on iPadOS; use its USB-C connection when the live test remains empty.
 
 ![Voice configuration](screenshots/voice-configuration.jpg)
 
 ## Battery-saving sound
 
-**Battery-saving sound** in **Performance Manager** is on by default, in every interface mode. The game's sound plays as before, without loading iOS's audio device layer into the game, whose Bluetooth part kept a quarter of a processor core busy for the whole game. If the sound ever misbehaves (silence, crackles, or no sound after you connect headphones), turn it off; the change applies from the next game start.
+**Battery-saving sound** in **Settings › Graphics & Power** is on by default, in every interface mode. The game's sound plays as before, without loading iOS's audio device layer into the game, whose Bluetooth part kept a quarter of a processor core busy for the whole game. If the sound ever misbehaves (silence, crackles, or no sound after you connect headphones), turn it off; the change applies from the next game start.
 
 If a phone call interrupts Forever, returning to the game restores its active audio session when iPadOS says playback may resume. If sound does not return, keep the app installed and send its log rather than reinstalling; [Send us a log](SENDING_LOGS.md) explains how.
 
 ## Get help safely
 
 When something fails, send a log — it is three taps and needs no computer:
-[Send us a log](SENDING_LOGS.md) shows where **Settings → Diagnostics and logs → Logs and
+[Send us a log](SENDING_LOGS.md) shows where **Settings › Diagnostics & Logs › Logs and
 reports** is, which file to pick, and how to share it.
 
 If a failure offers **Technical details** in the Settings sheet, copy that message too: it is

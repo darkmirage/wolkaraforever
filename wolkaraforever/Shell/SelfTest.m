@@ -926,7 +926,7 @@ struct AKSelfTestControl {
 
 static const struct AKSelfTestControl AKSelfTestControlTable[] = {
     {@"wow.refresh",                   AKSelfTestControlStaysUp,    @"Refresh checks the installation and the page stays up"},
-    {@"wow.settings",                  AKSelfTestControlOpensSheet, @"the settings button opens its sheet"},
+    {@"wow.play.edition",              AKSelfTestControlOpensSheet, @"the Play tab's edition title opens the edition list"},
     {@"wow.edition",                   AKSelfTestControlOpensSheet, @"the game edition row opens the edition list"},
     {@"wow.preferences",               AKSelfTestControlOpensSheet, @"Download preferences opens its sheet"},
     {@"wow.language",                  AKSelfTestControlOpensSheet, @"the app language row opens the language list"},
@@ -938,6 +938,7 @@ static const struct AKSelfTestControl AKSelfTestControlTable[] = {
     {@"wow.performance.renderProfile", AKSelfTestControlOpensSheet, @"Render profile opens its sheet"},
     {@"wow.launcher.interfaceMode",    AKSelfTestControlOpensSheet, @"Interface Mode opens its sheet"},
     {@"wow.launcher.interfaceSetup",   AKSelfTestControlOpensSheet, @"Controller Layout opens its sheet"},
+    {@"wow.settings.developer",        AKSelfTestControlOpensSheet, @"Developer Options opens its sheet"},
 };
 
 static const struct { __unsafe_unretained NSString *identifier; __unsafe_unretained NSString *why; } AKSelfTestControlsDeferred[] = {
@@ -965,14 +966,33 @@ static UIView *AKSelfTestFindView(UIView *root, NSString *identifier) {    if ([
     return nil;
 }
 
-// Bar buttons are not in the view tree, so they are looked for where UIKit keeps them.
-static id AKSelfTestControlFor(UIViewController *page, NSString *identifier) {
-    for (id item in @[page.navigationItem.leftBarButtonItem ?: NSNull.null,
-                      page.navigationItem.rightBarButtonItem ?: NSNull.null]) {
-        if ([item isKindOfClass:UIBarButtonItem.class] &&
-            [((UIBarButtonItem *)item).accessibilityIdentifier isEqual:identifier]) return item;
+// Bar buttons are not in the view tree, so they are looked for where UIKit keeps them: on the
+// page and on each tab's own page. A row is looked for on every tab, and its tab is brought
+// forward, because a tab that is not showing has no window and a press there opens nothing.
+static id AKSelfTestControlFor(TKWoWViewController *page, NSString *identifier) {
+    NSMutableArray<UINavigationItem *> *items = [NSMutableArray arrayWithObject:page.navigationItem];
+    for (UIView *tab in page.pageViews) {
+        UIResponder *responder = tab.nextResponder;
+        if ([responder isKindOfClass:UIViewController.class]) [items addObject:((UIViewController *)responder).navigationItem];
     }
-    return AKSelfTestFindView(page.view, identifier);
+    for (UINavigationItem *navigationItem in items) {
+        if ([navigationItem.titleView.accessibilityIdentifier isEqual:identifier]) {
+            [page selectTab:0];
+            return navigationItem.titleView;
+        }
+        for (id item in @[navigationItem.leftBarButtonItem ?: NSNull.null,
+                          navigationItem.rightBarButtonItem ?: NSNull.null]) {
+            if ([item isKindOfClass:UIBarButtonItem.class] &&
+                [((UIBarButtonItem *)item).accessibilityIdentifier isEqual:identifier]) {
+                [page selectTab:0];
+                return item;
+            }
+        }
+    }
+    UIView *found = AKSelfTestFindView(page.view, identifier);
+    for (UIView *tab in page.pageViews) if (!found) found = AKSelfTestFindView(tab, identifier);
+    if (found) [page revealView:found];
+    return found;
 }
 
 static BOOL AKSelfTestPressControl(id control) {
@@ -1363,6 +1383,12 @@ static UIView *AKSelfTestFind(UIView *view, NSString *identifier) {
     }
     return nil;
 }
+// The launcher's rows live on four tabs, and only the one showing is under its view.
+static UIView *AKSelfTestFindOnTabs(TKWoWViewController *page, NSString *identifier) {
+    UIView *found = AKSelfTestFind(page.view, identifier);
+    for (UIView *tab in page.pageViews) if (!found) found = AKSelfTestFind(tab, identifier);
+    return found;
+}
 
 static void AKSelfTestRunAddonsPage(AKSelfTestRecorder *recorder) {
     NSFileManager *files = NSFileManager.defaultManager;
@@ -1590,24 +1616,23 @@ static void AKSelfTestRunLanguage(AKSelfTestRecorder *recorder, NSInteger attemp
     // The change posts its notification, and the page that is already up rewrites its own
     // words through -localize. Asking the label is the check; asking the table again would
     // only prove the table.
-    UILabel *heading = (UILabel *)AKSelfTestFind(page.view, @"wow.heading.edition");
-    [recorder check:heading != nil && [heading.text isEqual:@"SPIELVERWALTUNG"]
-                    _:@"the live home page shows the German heading"];
-    UIButton *edition = (UIButton *)AKSelfTestFind(page.view, @"wow.edition");
-    [recorder check:edition != nil &&
-                   [[edition configuration].title hasPrefix:@"Spieledition: "]
-                    _:@"and the live edition row reads in German"];
+    UILabel *heading = (UILabel *)AKSelfTestFindOnTabs(page, @"wow.section.game.header");
+    [recorder check:heading != nil && [heading.text isEqual:@"Spiel"]
+                    _:@"the live Settings tab shows the German section header"];
+    UIButton *language = (UIButton *)AKSelfTestFindOnTabs(page, @"wow.language");
+    [recorder check:language != nil && [language.accessibilityLabel isEqual:@"App-Sprache"]
+                    _:@"and the live app language row reads in German"];
 
     localization.language = WKAppLanguageEnglish;
     [recorder check:localization.resolvedLanguage == WKAppLanguageEnglish
                     _:@"English comes back"];
-    heading = (UILabel *)AKSelfTestFind(page.view, @"wow.heading.edition");
-    [recorder check:heading != nil && [heading.text isEqual:@"GAME SETTINGS MANAGER"]
+    heading = (UILabel *)AKSelfTestFindOnTabs(page, @"wow.section.game.header");
+    [recorder check:heading != nil && [heading.text isEqual:@"Game"]
                     _:@"and the live page reads English again"];
 
     // Put the user's own choice back, whatever it was.
     localization.language = before;
-    heading = (UILabel *)AKSelfTestFind(page.view, @"wow.heading.edition");
+    heading = (UILabel *)AKSelfTestFindOnTabs(page, @"wow.section.game.header");
     [recorder check:localization.language == before
                     _:@"the language the user had is restored"];
     (void)heading;

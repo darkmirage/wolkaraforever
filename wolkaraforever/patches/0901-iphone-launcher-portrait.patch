@@ -1,0 +1,23 @@
+# WolkaraForever layer patch 0901 - project: the iPhone launcher may be upright
+#
+# Why: the Duo's cover screen is an upright screen, and on a phone the launcher was
+# landscape-only, so changing a setting meant turning the phone sideways. The launcher's
+# lists and Play tab work upright; the game does not, and is held to landscape on a phone
+# by its own window (wolkaraforever/Touch/HostOrientation.m), with the launcher turning
+# the scene sideways before it starts one.
+#
+# Applies to: project.yml
+# Upstream: no - the platform's own launcher is landscape-only by design.
+#
+diff --git a/project.yml b/project.yml
+--- a/project.yml
++++ b/project.yml
+@@ -77,7 +77,7 @@
+         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+         INFOPLIST_KEY_UIRequiresFullScreen: NO
+-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
++        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown"
+         INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
+     postBuildScripts:

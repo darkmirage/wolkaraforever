@@ -1,6 +1,6 @@
 # Send us a log when something goes wrong
 
-> Verified: 2026-11-17 · Source: `db5470a`
+> Verified: 2026-11-20 · Source: `1ca7769`
 
 A log is a text file that records what the app was doing. When something fails, the log
 usually says why, and it saves a lot of guessing. You do not need a Mac, a computer cable,
@@ -8,8 +8,8 @@ or any technical knowledge to send one — it is three taps on the iPad.
 
 ## The short version
 
-1. Open WolkaraForever and stay on the home screen (the one with **Play**).
-2. Tap **Settings** at the top right, then **Diagnostics and logs**.
+1. Open WolkaraForever.
+2. Tap the **Settings** tab, then **Diagnostics & Logs**.
    (On the app-library screen, the stethoscope icon opens the same page.)
 3. Scroll to **Logs and reports**. The **newest file is at the top** — usually
    `wolkaraforever.log`, or `native-guest.log` if you have just played.

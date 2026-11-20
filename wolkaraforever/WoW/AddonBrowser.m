@@ -140,7 +140,7 @@
     UINavigationBarAppearance *appearance = [UINavigationBarAppearance new];
     [appearance configureWithOpaqueBackground];
     appearance.backgroundColor = WKPanel();
-    appearance.titleTextAttributes = @{ NSForegroundColorAttributeName: [UIColor colorWithWhite:0.96 alpha:1] };
+    appearance.titleTextAttributes = @{ NSForegroundColorAttributeName: WKText() };
     self.navigationController.navigationBar.standardAppearance = appearance;
     self.navigationController.navigationBar.scrollEdgeAppearance = appearance;
     self.navigationController.navigationBar.tintColor = WKGold();
@@ -181,7 +181,7 @@
     _statusLabel = [UILabel new];
     _statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
     _statusLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightRegular];
-    _statusLabel.textColor = [UIColor colorWithWhite:0.7 alpha:1];
+    _statusLabel.textColor = WKMuted();
     _statusLabel.numberOfLines = 2;
     _statusLabel.textAlignment = NSTextAlignmentCenter;
     _statusLabel.text = WKLocalized(@"addons.browser.loading");

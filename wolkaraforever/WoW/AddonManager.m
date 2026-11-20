@@ -236,16 +236,16 @@ static UIImage *TKAddonPlaceholderIcon(void) {
 }
 - (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)identifier {
     if ((self=[super initWithStyle:style reuseIdentifier:identifier])) {
-        self.backgroundColor=[UIColor colorWithRed:0.07 green:0.09 blue:0.13 alpha:1];
+        self.backgroundColor=WKElevated();
         self.selectionStyle=UITableViewCellSelectionStyleDefault;
         _iconView=[[UIImageView alloc] init];
         _iconView.translatesAutoresizingMaskIntoConstraints=NO;
         _iconView.contentMode=UIViewContentModeScaleAspectFill;
         _iconView.clipsToBounds=YES;
         _iconView.layer.cornerRadius=10;
-        _iconView.backgroundColor=[UIColor colorWithWhite:1 alpha:0.06];
+        _iconView.backgroundColor=WKWash();
         _iconView.image=TKAddonPlaceholderIcon();
-        _iconView.tintColor=[UIColor colorWithWhite:0.55 alpha:1];
+        _iconView.tintColor=WKDisabled();
         _iconView.accessibilityIdentifier=@"wow.addons.logo";
         [NSLayoutConstraint activateConstraints:@[
             [_iconView.widthAnchor constraintEqualToConstant:46],
@@ -253,13 +253,13 @@ static UIImage *TKAddonPlaceholderIcon(void) {
         ]];
         _titleLabel=[UILabel new];
         _titleLabel.font=[UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
-        _titleLabel.textColor=[UIColor colorWithWhite:0.96 alpha:1];
+        _titleLabel.textColor=WKText();
         _titleLabel.numberOfLines=1;
         _titleLabel.lineBreakMode=NSLineBreakByTruncatingTail;
         _titleLabel.accessibilityIdentifier=@"wow.addons.name";
         _fileLabel=[UILabel new];
         _fileLabel.font=[UIFont systemFontOfSize:11.5 weight:UIFontWeightRegular];
-        _fileLabel.textColor=[UIColor colorWithWhite:0.62 alpha:1];
+        _fileLabel.textColor=WKMuted();
         _fileLabel.numberOfLines=1;
         _fileLabel.lineBreakMode=NSLineBreakByTruncatingMiddle;
         _fileLabel.accessibilityIdentifier=@"wow.addons.file";
@@ -275,7 +275,7 @@ static UIImage *TKAddonPlaceholderIcon(void) {
             TKAddonColumn column=(TKAddonColumn)number.unsignedIntegerValue;
             UILabel *label=[UILabel new];
             label.font=[UIFont systemFontOfSize:12 weight:UIFontWeightRegular];
-            label.textColor=[UIColor colorWithWhite:0.82 alpha:1];
+            label.textColor=WKText();
             label.numberOfLines=1;
             label.lineBreakMode=NSLineBreakByTruncatingTail;
             label.accessibilityIdentifier=[@"wow.addons.value." stringByAppendingString:TKAddonColumnTitle(column).lowercaseString];
@@ -435,7 +435,7 @@ static UIImage *TKAddonPlaceholderIcon(void) {
 - (UIButton *)updateButton { return _updateButton; }
 - (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)identifier {
     if ((self=[super initWithStyle:style reuseIdentifier:identifier])) {
-        self.backgroundColor=[UIColor colorWithRed:0.07 green:0.09 blue:0.13 alpha:1];
+        self.backgroundColor=WKElevated();
         // The row itself is the always-available management action. Update is a separate
         // inline action and may be unavailable, but every installed package must still explain
         // whether it can be removed and expose Remove when this app owns it.
@@ -451,21 +451,21 @@ static UIImage *TKAddonPlaceholderIcon(void) {
         _iconView.contentMode=UIViewContentModeScaleAspectFill;
         _iconView.clipsToBounds=YES;
         _iconView.layer.cornerRadius=9;
-        _iconView.backgroundColor=[UIColor colorWithWhite:1 alpha:0.06];
+        _iconView.backgroundColor=WKWash();
         _iconView.image=TKAddonPlaceholderIcon();
-        _iconView.tintColor=[UIColor colorWithWhite:0.55 alpha:1];
+        _iconView.tintColor=WKDisabled();
         [NSLayoutConstraint activateConstraints:@[
             [_iconView.widthAnchor constraintEqualToConstant:38],
             [_iconView.heightAnchor constraintEqualToConstant:38],
         ]];
         _titleLabel=[UILabel new];
         _titleLabel.font=[UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
-        _titleLabel.textColor=[UIColor colorWithRed:0.9 green:0.72 blue:0.35 alpha:1];
+        _titleLabel.textColor=WKGold();
         _titleLabel.numberOfLines=0;
         _titleLabel.accessibilityIdentifier=@"wow.addons.installed.name";
         _detailLabel=[UILabel new];
         _detailLabel.font=[UIFont systemFontOfSize:11.5 weight:UIFontWeightRegular];
-        _detailLabel.textColor=[UIColor colorWithWhite:0.75 alpha:1];
+        _detailLabel.textColor=WKMuted();
         _detailLabel.numberOfLines=0;
         _detailLabel.accessibilityIdentifier=@"wow.addons.installed.detail";
         // The one word about this package's update, in its own line. It used to live only in
@@ -473,7 +473,7 @@ static UIImage *TKAddonPlaceholderIcon(void) {
         // update state at all.
         _stateLabel=[UILabel new];
         _stateLabel.font=[UIFont systemFontOfSize:11 weight:UIFontWeightSemibold];
-        _stateLabel.textColor=[UIColor colorWithWhite:0.7 alpha:1];
+        _stateLabel.textColor=WKMuted();
         _stateLabel.numberOfLines=1;
         _stateLabel.lineBreakMode=NSLineBreakByTruncatingTail;
         UIStackView *text=[[UIStackView alloc] initWithArrangedSubviews:@[_titleLabel,_detailLabel,_stateLabel]];
@@ -520,7 +520,7 @@ static UIImage *TKAddonPlaceholderIcon(void) {
     // what a row shows until then; a row that never got one used to show the placeholder for
     // ever, because nothing ever asked for it.
     _iconView.image=TKAddonPlaceholderIcon();
-    _iconView.tintColor=[UIColor colorWithWhite:0.55 alpha:1];
+    _iconView.tintColor=WKDisabled();
     if (logoURLString.length) {
         __weak TKAddonInstalledCell *weakSelf=self;
         NSString *wanted=logoURLString.copy;
@@ -546,7 +546,7 @@ static UIImage *TKAddonPlaceholderIcon(void) {
     // The word about this package's update, from the same table the button uses. A row whose
     // state changed but whose sentence did not is how a list starts lying.
     NSString *stateKey=nil;
-    UIColor *stateColor=[UIColor colorWithWhite:0.7 alpha:1];
+    UIColor *stateColor=WKMuted();
     switch (state) {
         case TKAddonUpdateStateAvailable:
             stateKey=@"addons.update.available"; stateColor=WKGold();
@@ -649,16 +649,16 @@ static UIImage *TKAddonPlaceholderIcon(void) {
 - (UIButton *)installButton { return _installButton; }
 - (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)identifier {
     if ((self=[super initWithStyle:style reuseIdentifier:identifier])) {
-        self.backgroundColor=[UIColor colorWithRed:0.07 green:0.09 blue:0.13 alpha:1];
+        self.backgroundColor=WKElevated();
         self.selectionStyle=UITableViewCellSelectionStyleNone;
         _titleLabel=[UILabel new];
         _titleLabel.font=[UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
-        _titleLabel.textColor=[UIColor colorWithRed:0.9 green:0.72 blue:0.35 alpha:1];
+        _titleLabel.textColor=WKGold();
         _titleLabel.numberOfLines=0;
         _titleLabel.accessibilityIdentifier=@"wow.addons.bundled.name";
         _detailLabel=[UILabel new];
         _detailLabel.font=[UIFont systemFontOfSize:11.5 weight:UIFontWeightRegular];
-        _detailLabel.textColor=[UIColor colorWithWhite:0.75 alpha:1];
+        _detailLabel.textColor=WKMuted();
         _detailLabel.numberOfLines=0;
         _detailLabel.accessibilityIdentifier=@"wow.addons.bundled.detail";
         UIStackView *text=[[UIStackView alloc] initWithArrangedSubviews:@[_titleLabel,_detailLabel]];
@@ -713,7 +713,7 @@ static UIImage *TKAddonPlaceholderIcon(void) {
         UILabel *name=[UILabel new];
         name.text=WKLocalized(@"addons.column.name").uppercaseString;
         name.font=[UIFont systemFontOfSize:10 weight:UIFontWeightSemibold];
-        name.textColor=[UIColor colorWithWhite:0.55 alpha:1];
+        name.textColor=WKDisabled();
         UIStackView *row=[ [UIStackView alloc] initWithArrangedSubviews:@[name] ];
         _labels=[NSMutableDictionary new];
         for (NSNumber *number in TKAddonColumnOrder()) {
@@ -721,7 +721,7 @@ static UIImage *TKAddonPlaceholderIcon(void) {
             UILabel *label=[UILabel new];
             label.text=TKAddonColumnTitle(column).uppercaseString;
             label.font=[UIFont systemFontOfSize:10 weight:UIFontWeightSemibold];
-            label.textColor=[UIColor colorWithWhite:0.55 alpha:1];
+            label.textColor=WKDisabled();
             [label.widthAnchor constraintEqualToConstant:TKAddonColumnWidth(column)].active=YES;
             _labels[number]=label;
             [row addArrangedSubview:label];
@@ -1008,7 +1008,7 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     _mode.selectedSegmentIndex=(NSInteger)_tab; _mode.selectedSegmentTintColor=gold;
     _mode.accessibilityIdentifier=@"wow.addons.tabs";
     [_mode setTitleTextAttributes:@{NSForegroundColorAttributeName:UIColor.blackColor} forState:UIControlStateSelected];
-    [_mode setTitleTextAttributes:@{NSForegroundColorAttributeName:[UIColor colorWithWhite:0.72 alpha:1]} forState:UIControlStateNormal];
+    [_mode setTitleTextAttributes:@{NSForegroundColorAttributeName:WKMuted()} forState:UIControlStateNormal];
     [_mode addTarget:self action:@selector(changeMode:) forControlEvents:UIControlEventValueChanged];
     _mode.translatesAutoresizingMaskIntoConstraints=NO;
     [header addSubview:_mode];
@@ -1019,7 +1019,7 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     // The list toolbar, where the site puts its count, sort, filters and column picker.
     _countLabel=[UILabel new];
     _countLabel.font=[UIFont systemFontOfSize:12 weight:UIFontWeightRegular];
-    _countLabel.textColor=[UIColor colorWithWhite:0.62 alpha:1];
+    _countLabel.textColor=WKMuted();
     _countLabel.accessibilityIdentifier=@"wow.addons.count";
     [_countLabel setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
     // The count gives way to the buttons beside it rather than clipping their titles: it is a
@@ -1032,7 +1032,7 @@ NSArray<TKWoWAddon *> *TKWoWAddonsAtDirectory(NSString *directory) {
     // would move every row down whenever the mode changed.
     _selectionLabel=[UILabel new];
     _selectionLabel.font=[UIFont systemFontOfSize:12 weight:UIFontWeightRegular];
-    _selectionLabel.textColor=[UIColor colorWithWhite:0.62 alpha:1];
+    _selectionLabel.textColor=WKMuted();
     _selectionLabel.accessibilityIdentifier=@"wow.addons.selection.count";
     [_selectionLabel setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
     [_selectionLabel setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
@@ -2668,7 +2668,7 @@ static NSString *TKAddonInstalledFilterKey(NSInteger filter) {
                                        ? addon.provider[TKAddonProviderLogo] : nil];
         return installed;
     }
-    cell.backgroundColor=[UIColor colorWithRed:0.07 green:0.09 blue:0.13 alpha:1]; cell.textLabel.textColor=[UIColor colorWithRed:0.9 green:0.72 blue:0.35 alpha:1]; cell.detailTextLabel.textColor=[UIColor colorWithWhite:0.75 alpha:1]; cell.textLabel.numberOfLines=0; cell.detailTextLabel.numberOfLines=0;
+    cell.backgroundColor=WKElevated(); cell.textLabel.textColor=WKGold(); cell.detailTextLabel.textColor=WKMuted(); cell.textLabel.numberOfLines=0; cell.detailTextLabel.numberOfLines=0;
     return cell;
 }
 // The line under an installed package's name: version, author, whether it is managed, whether it

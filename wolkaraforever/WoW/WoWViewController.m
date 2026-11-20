@@ -27,11 +27,6 @@
 #import <GameController/GameController.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
-static UIColor *Gold(void) { return [UIColor colorWithRed:0.88 green:0.73 blue:0.43 alpha:1]; }
-// One grey for every row that cannot be used, so a page in a transient state
-// reads as one thing instead of a mix of dimmed and full-strength text.
-static UIColor *RowGrey(void) { return [UIColor colorWithWhite:0.55 alpha:1]; }
-static UIColor *Muted(void) { return [UIColor colorWithRed:0.66 green:0.72 blue:0.78 alpha:1]; }
 // The game's download languages, named in the app's own language: a German-speaking user
 // choosing what World of Warcraft downloads needs to read the choice, and the row above it
 // is the same row in the same language.
@@ -125,7 +120,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         _titleLabel.isAccessibilityElement=NO;
         [_titleLabel setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
         _toggle=[UISwitch new];
-        _toggle.onTintColor=Gold();
+        _toggle.onTintColor=WKGold();
         _toggle.accessibilityLabel=title;
         _toggle.accessibilityIdentifier=[identifier stringByAppendingString:@".switch"];
         [_toggle addTarget:target action:action forControlEvents:UIControlEventValueChanged];
@@ -155,7 +150,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // colour: no alpha on the row, which used to make an enabled switch look
     // the same as a disabled one. Gold is what every other usable row uses, so
     // an on/off row reads like the buttons above and below it.
-    _titleLabel.textColor=enabled?Gold():RowGrey();
+    _titleLabel.textColor=enabled?WKGold():WKDisabled();
 }
 - (void)applyTitle:(NSString *)title {
     _titleLabel.text=title;
@@ -180,7 +175,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor=[UIColor colorWithWhite:0 alpha:0.55];
+    self.view.backgroundColor=WKScrim();
     UILabel *hint=[UILabel new];
     hint.text=WKLocalized(@"home.launcher.interfaceSetup.reserve.hint");
     hint.numberOfLines=0; hint.textAlignment=NSTextAlignmentCenter;
@@ -190,7 +185,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [self.view addSubview:hint];
     _selection=[UIView new];
     _selection.userInteractionEnabled=NO;
-    _selection.backgroundColor=[UIColor colorWithWhite:1 alpha:0.12];
+    _selection.backgroundColor=WKSelectionWash();
     _selection.layer.borderColor=UIColor.systemYellowColor.CGColor;
     _selection.layer.borderWidth=2; _selection.layer.cornerRadius=8;
     [self.view addSubview:_selection];
@@ -311,7 +306,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 // The page's own section heading: the small uppercase label the edition line
 // always used, now naming each group of rows.
 - (UILabel *)heading:(NSString *)text {
-    UILabel *label=Label(17,UIFontWeightSemibold,Muted());
+    UILabel *label=Label(17,UIFontWeightSemibold,WKMuted());
     label.text=text.uppercaseString;
     return label;
 }
@@ -324,10 +319,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIView *box=[UIView new];
     box.accessibilityIdentifier=identifier;
     box.translatesAutoresizingMaskIntoConstraints=NO;
-    box.backgroundColor=[UIColor colorWithRed:0.055 green:0.085 blue:0.125 alpha:1];
+    box.backgroundColor=WKGrouped();
     box.layer.cornerRadius=14;
     box.layer.borderWidth=1;
-    box.layer.borderColor=[Gold() colorWithAlphaComponent:0.18].CGColor;
+    box.layer.borderColor=[WKGold() colorWithAlphaComponent:0.18].CGColor;
     UILabel *heading=[self heading:@""];
     heading.accessibilityIdentifier=[identifier stringByReplacingOccurrencesOfString:@"wow.box."
                                                                           withString:@"wow.heading."];
@@ -396,7 +391,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         return view;
     }
     // No artwork in this build: say the name rather than show an empty gap.
-    UILabel *label=Label(37,UIFontWeightBold,Gold()); label.text=@"WOLKAREFOREVER";
+    UILabel *label=Label(37,UIFontWeightBold,WKGold()); label.text=@"WOLKAREFOREVER";
     label.numberOfLines=1;
     label.adjustsFontSizeToFitWidth=YES;
     label.minimumScaleFactor=0.45;
@@ -409,10 +404,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [super viewDidLoad];
     [self migratePhoneRenderProfile];
     self.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;
-    self.view.backgroundColor=[UIColor colorWithRed:0.025 green:0.045 blue:0.075 alpha:1];
+    self.view.backgroundColor=WKInk();
     _background=[CAGradientLayer layer];
-    _background.colors=@[(id)[UIColor colorWithRed:0.035 green:0.085 blue:0.13 alpha:1].CGColor,
-        (id)[UIColor colorWithRed:0.02 green:0.03 blue:0.055 alpha:1].CGColor];
+    _background.colors=@[(id)WKInkTop().CGColor,
+        (id)WKInkBottom().CGColor];
     _background.startPoint=CGPointMake(0,0); _background.endPoint=CGPointMake(1,1);
     [self.view.layer insertSublayer:_background atIndex:0];
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"gearshape"]
@@ -507,7 +502,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
                _layoutRestoreButton, _layoutBackupButton]];
 
     _activity=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-    _activity.color=Gold(); _activity.hidesWhenStopped=YES;
+    _activity.color=WKGold(); _activity.hidesWhenStopped=YES;
     _stateLabel=Label(17,UIFontWeightSemibold,UIColor.whiteColor); _stateLabel.accessibilityIdentifier=@"wow.status";
     UIStackView *stateRow=[[UIStackView alloc] initWithArrangedSubviews:@[_activity,_stateLabel]];
     stateRow.axis=UILayoutConstraintAxisHorizontal; stateRow.spacing=10;
@@ -515,22 +510,22 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     // it rather than stretching/compressing both views to that same height.
     stateRow.alignment=UIStackViewAlignmentCenter;
     [_activity setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
-    _detailLabel=Label(17,UIFontWeightRegular,Muted()); _detailLabel.accessibilityIdentifier=@"wow.detail";
-    _versionLabel=Label(17,UIFontWeightRegular,Muted()); _versionLabel.accessibilityIdentifier=@"wow.version";
+    _detailLabel=Label(17,UIFontWeightRegular,WKMuted()); _detailLabel.accessibilityIdentifier=@"wow.detail";
+    _versionLabel=Label(17,UIFontWeightRegular,WKMuted()); _versionLabel.accessibilityIdentifier=@"wow.version";
     _progressBar=[[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
-    _progressBar.progressTintColor=Gold(); _progressBar.accessibilityIdentifier=@"wow.progress";
+    _progressBar.progressTintColor=WKGold(); _progressBar.accessibilityIdentifier=@"wow.progress";
     _launchProgress=[TKLaunchProgressView new];
     _launchProgress.accessibilityIdentifier=@"wow.elapsed";
     _diagnosticsButton=[self button:@"wow.diagnostics" action:@selector(diagnostics)];
-    _diagnosticsButton.tintColor=Gold(); _diagnosticsButton.hidden=YES;
+    _diagnosticsButton.tintColor=WKGold(); _diagnosticsButton.hidden=YES;
     UIStackView *status=Stack(@[stateRow,_detailLabel,_progressBar,_launchProgress,_versionLabel,_diagnosticsButton],10);
     status.layoutMargins=UIEdgeInsetsMake(20,20,20,20); status.layoutMarginsRelativeArrangement=YES;
-    status.backgroundColor=[UIColor colorWithRed:0.07 green:0.105 blue:0.15 alpha:1];
+    status.backgroundColor=WKElevated();
     status.layer.cornerRadius=16; status.layer.borderWidth=1;
-    status.layer.borderColor=[Gold() colorWithAlphaComponent:0.24].CGColor;
+    status.layer.borderColor=[WKGold() colorWithAlphaComponent:0.24].CGColor;
     _primaryButton=[self button:@"wow.primary" action:@selector(primaryAction)];
     [_primaryButton.heightAnchor constraintGreaterThanOrEqualToConstant:52].active=YES;
-    _updatesLabel=Label(17,UIFontWeightRegular,Muted()); _updatesLabel.accessibilityIdentifier=@"wow.updates";
+    _updatesLabel=Label(17,UIFontWeightRegular,WKMuted()); _updatesLabel.accessibilityIdentifier=@"wow.updates";
     // Exactly one supporting line below Play in the idle state. The startup note that used to
     // sit under it was a second line of passive copy on a page whose own status panel already
     // says how starting works; it is gone rather than hidden, so nothing reserves space for it.
@@ -590,14 +585,14 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     UINavigationBarAppearance *appearance=[UINavigationBarAppearance new]; [appearance configureWithOpaqueBackground];
-    appearance.backgroundColor=[UIColor colorWithRed:0.025 green:0.045 blue:0.075 alpha:1];
-    appearance.titleTextAttributes=@{NSForegroundColorAttributeName:Gold()};
+    appearance.backgroundColor=WKInk();
+    appearance.titleTextAttributes=@{NSForegroundColorAttributeName:WKGold()};
     self.navigationItem.standardAppearance=appearance; self.navigationItem.scrollEdgeAppearance=appearance;
     self.navigationItem.compactAppearance=appearance;
     self.navigationController.overrideUserInterfaceStyle=UIUserInterfaceStyleDark;
     self.navigationController.navigationBar.prefersLargeTitles=NO;
     self.navigationItem.largeTitleDisplayMode=UINavigationItemLargeTitleDisplayModeNever;
-    self.navigationController.navigationBar.tintColor=Gold();
+    self.navigationController.navigationBar.tintColor=WKGold();
 }
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
@@ -809,6 +804,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             self->_plan=plan; self->_installation=installation; self->_error=error;
             [self releaseCheckIdleTimer];
             self->_checkedAt=plan?NSDate.date:nil; self->_busy=NO; self->_updating=NO; self->_updateError=updateAttempted && error; [self render];
+            // A download the person waited through ends with a tap of its own; a quiet check does not.
+            if (updateAttempted && !client.cancelled)
+                WKPlayHaptic(error || installation.state!=TKWoWInstallationReady ? WKHapticFailure : WKHapticSuccess);
             WKLog("wow", @"checked: state=%ld error=%@", (long)installation.state, error.localizedDescription ?: @"none");
             // Returning from the background or changing edition invalidates this request.
             if (launch && self->_launchWhenReady && [self inFront] &&
@@ -838,10 +836,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     if (_startupFailure) { _startupFailure=nil; [self render]; }
     if (_error || !_plan) { [self refresh]; return; }
     if (_installation.state==TKWoWInstallationMissing || _installation.state==TKWoWInstallationNeedsRepair) {
+        WKPlayHaptic(WKHapticPrimary);
         [self checkForUpdatesAndLaunch:NO install:YES];return;
     }
     if (_installation.state!=TKWoWInstallationReady) return;
     if (_executionMode==TKExecutionModeNone) return;
+    WKPlayHaptic(WKHapticPrimary);
     [self checkForUpdatesAndLaunch:YES];
 }
 - (void)repairInstallation {
@@ -852,7 +852,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 - (void)configureButton:(UIButton *)button title:(NSString *)title filled:(BOOL)filled {
     UIButtonConfiguration *configuration=filled?UIButtonConfiguration.filledButtonConfiguration:UIButtonConfiguration.plainButtonConfiguration;
     configuration.title=title; configuration.cornerStyle=UIButtonConfigurationCornerStyleMedium;
-    configuration.baseBackgroundColor=Gold(); configuration.baseForegroundColor=filled?[UIColor colorWithRed:0.08 green:0.065 blue:0.035 alpha:1]:Gold();
+    configuration.baseBackgroundColor=WKGold(); configuration.baseForegroundColor=filled?WKOnGold():WKGold();
     configuration.contentInsets=NSDirectionalEdgeInsetsMake(filled?14:8,12,filled?14:8,12);
     button.configuration=configuration;
     [button setTitle:title forState:UIControlStateNormal];
@@ -861,14 +861,14 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 // starting page, a session page and an ended session all read the same.
 - (void)stylePlainButton:(UIButton *)button {
     UIButtonConfiguration *configuration=button.configuration;
-    configuration.baseForegroundColor=button.enabled?Gold():RowGrey();
+    configuration.baseForegroundColor=button.enabled?WKGold():WKDisabled();
     button.configuration=configuration;
 }
 - (void)stylePrimaryButton {
     UIButtonConfiguration *configuration=_primaryButton.configuration;
     BOOL enabled=_primaryButton.enabled;
-    configuration.baseBackgroundColor=enabled?Gold():[UIColor colorWithWhite:0.28 alpha:1];
-    configuration.baseForegroundColor=enabled?[UIColor colorWithRed:0.08 green:0.065 blue:0.035 alpha:1]:[UIColor colorWithWhite:0.62 alpha:1];
+    configuration.baseBackgroundColor=enabled?WKGold():WKDisabledFill();
+    configuration.baseForegroundColor=enabled?WKOnGold():WKDisabledOnFill();
     _primaryButton.configuration=configuration;
 }
 // Every fixed word on the page, in the app's language, in one place. Called once when the
@@ -964,7 +964,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     if (!self.isViewLoaded) return;
     [self configureButton:_editionButton title:WKLocalizedFormat(@"home.edition.row",_product[@"name"]) filled:NO];
     _editionButton.contentHorizontalAlignment=UIControlContentHorizontalAlignmentLeading;
-    _editionButton.backgroundColor=[UIColor colorWithWhite:1 alpha:0.055]; _editionButton.layer.cornerRadius=10;
+    _editionButton.backgroundColor=WKWash(); _editionButton.layer.cornerRadius=10;
     // Region and locale in one row, in the shape the request asked for: a prefix a reader can
     // scan, then the two values. No centred dot and no bare "EU · English".
     [self configureButton:_preferencesButton title:WKLocalizedFormat(@"home.preferences.row",_region.uppercaseString,TKWoWLocaleName(_locale)) filled:NO];
@@ -1208,7 +1208,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
                                 _layoutCreateButton,_interfaceSetupButton,_layoutRestoreButton,_layoutBackupButton])
         [self stylePlainButton:button];
     [self stylePrimaryButton];
-    _diagnosticsButton.tintColor=_diagnosticsButton.enabled?Gold():RowGrey();
+    _diagnosticsButton.tintColor=_diagnosticsButton.enabled?WKGold():WKDisabled();
     if (_busy) [_activity startAnimating]; else [_activity stopAnimating];
     if (_checkedAt) {
         // The time is written the way the chosen language writes it, not the way the iPad is
@@ -2405,6 +2405,7 @@ static NSString *ElementLabel(NSString *element) {
 - (void)finishStartupWithMessage:(NSString *)message failed:(BOOL)failed {
     _starting=NO; _running=NO; _startupFailure=failed?message:nil;
     [_launchProgress stop]; _diagnosticsButton.hidden=!failed;
+    if (failed) WKPlayHaptic(WKHapticFailure);
     [self render];
 }
 // Called when the guest's own window appears. Until then the page says it is

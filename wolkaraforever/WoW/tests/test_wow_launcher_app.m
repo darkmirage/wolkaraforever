@@ -1042,6 +1042,9 @@ static void TestIPadM5RenderProfile(void) {
     self.controller.startApp=^(TKApp *app) { assert(app==(id)fixture.apps[0]); weakSelf.launches++; };
     self.controller.executionMode=TKExecutionModeDeveloperService;
     self.window.rootViewController=[[UINavigationController alloc] initWithRootViewController:self.controller];
+    // The app's scene does this to its window; a sheet's colours come from the window, not the page.
+    WKAdoptAppearance(self.window);
+    assert(self.window.overrideUserInterfaceStyle==UIUserInterfaceStyleDark);
     [self.window makeKeyAndVisible];
     [self performSelector:@selector(changeSelection) withObject:nil afterDelay:0.1];
 }

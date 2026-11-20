@@ -1591,6 +1591,14 @@ static void TestIPadM5RenderProfile(void) {
     if (![[self detail] isEqual:@"Downloading new data · 40 GB / 70 GB · 4.0 MB/s · ~2h 5m left"])
         fprintf(stderr, "WOW_DOWNLOADING_DETAIL_MISMATCH: %s\n", [[self detail] UTF8String]);
     assert([[self detail] isEqual:@"Downloading new data · 40 GB / 70 GB · 4.0 MB/s · ~2h 5m left"]);
+    // The button is the bar: it says how far, its fill is that far across, and the separate bar
+    // in the status panel is gone for the download.
+    assert([ButtonTitle([self primary]) isEqual:@"Downloading · 57%"]);
+    assert(![self primary].enabled);
+    UIView *fill = Find([self primary], @"wow.primary.fill");
+    [self.window layoutIfNeeded];
+    assert(fill != nil && fabs(fill.bounds.size.width / fill.superview.bounds.size.width - 40.0 / 70.0) < 0.01);
+    assert(FindHome(self.controller, @"wow.progress").hidden);
     [self capture:@"wow-downloading.png"];
     // Let the held update finish, and the state goes with it.
     atomic_store(&holdUpdate,false);

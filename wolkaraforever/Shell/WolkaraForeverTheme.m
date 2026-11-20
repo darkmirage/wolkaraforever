@@ -18,6 +18,7 @@ UIColor *WKDisabledFill(void)  { return [UIColor colorWithWhite:0.28 alpha:1]; }
 UIColor *WKDisabledOnFill(void){ return [UIColor colorWithWhite:0.62 alpha:1]; }
 UIColor *WKWash(void)          { return [UIColor colorWithWhite:1 alpha:0.055]; }
 UIColor *WKSelectionWash(void) { return [UIColor colorWithWhite:1 alpha:0.12]; }
+UIColor *WKGoldDeep(void)     { return [UIColor colorWithRed:0.50  green:0.39  blue:0.17 alpha:1]; }
 UIColor *WKScrim(void)         { return [UIColor colorWithWhite:0 alpha:0.55]; }
 
 UIFont *WKFont(UIFontTextStyle style, UIFontWeight weight) {

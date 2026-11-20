@@ -935,7 +935,52 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     BOOL enabled=_primaryButton.enabled;
     configuration.baseBackgroundColor=enabled?WKGold():WKDisabledFill();
     configuration.baseForegroundColor=enabled?WKOnGold():WKDisabledOnFill();
+    // While a download is running the button is the progress bar: the gold fills it from the
+    // leading edge as the bytes arrive, and its words say how far. One control carries the state
+    // instead of a disabled "Updating…" button under a second bar.
+    double fraction=[self downloadFraction];
+    if (fraction>=0) {
+        UIView *track=[UIView new];
+        track.backgroundColor=WKDisabledFill();
+        UIView *fill=[UIView new];
+        fill.backgroundColor=WKGoldDeep();
+        fill.accessibilityIdentifier=@"wow.primary.fill";
+        fill.translatesAutoresizingMaskIntoConstraints=NO;
+        [track addSubview:fill];
+        [NSLayoutConstraint activateConstraints:@[
+            [fill.topAnchor constraintEqualToAnchor:track.topAnchor],
+            [fill.bottomAnchor constraintEqualToAnchor:track.bottomAnchor],
+            [fill.leadingAnchor constraintEqualToAnchor:track.leadingAnchor],
+            [fill.widthAnchor constraintEqualToAnchor:track.widthAnchor multiplier:MAX(0.001,MIN(1,fraction))],
+        ]];
+        UIBackgroundConfiguration *background=[UIBackgroundConfiguration clearConfiguration];
+        background.customView=track;
+        background.cornerRadius=12;
+        configuration.background=background;
+        configuration.baseForegroundColor=WKText();
+        configuration.titleTextAttributesTransformer=^NSDictionary *(NSDictionary *attributes) {
+            NSMutableDictionary *changed=[attributes mutableCopy];
+            changed[NSFontAttributeName]=WKFont(UIFontTextStyleHeadline, UIFontWeightSemibold);
+            changed[NSForegroundColorAttributeName]=WKText();
+            return changed;
+        };
+    } else {
+        configuration.background=[UIBackgroundConfiguration clearConfiguration];
+        configuration.baseBackgroundColor=enabled?WKGold():WKDisabledFill();
+        configuration.titleTextAttributesTransformer=^NSDictionary *(NSDictionary *attributes) {
+            NSMutableDictionary *changed=[attributes mutableCopy];
+            changed[NSFontAttributeName]=WKFont(UIFontTextStyleHeadline, UIFontWeightSemibold);
+            return changed;
+        };
+    }
     _primaryButton.configuration=configuration;
+}
+// How much of a running download has arrived, from 0 to 1, or -1 when no download is running
+// or its size is not known yet. Verifying and the other phases have no bar: they are not bytes
+// arriving, and a bar that runs twice reads as a bar that went backwards.
+- (double)downloadFraction {
+    if (!_busy || !_updating || !_updateTotal || ![_updatePhase isEqual:@"download"]) return -1;
+    return (double)_updateDone/(double)_updateTotal;
 }
 // Every fixed word on the page, in the app's language, in one place. Called once when the
 // page is built and again whenever the language changes: labels set in -viewDidLoad alone
@@ -1156,7 +1201,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     BOOL downloadAhead=_busy || _resumeCheck || _installation.state==TKWoWInstallationMissing ||
         _installation.state==TKWoWInstallationOutdated || _installation.state==TKWoWInstallationNeedsRepair;
     _updatesLabel.hidden=_starting || _running || _sessionUsed || !downloadAhead;
-    _progressBar.hidden=!_updating || !_updateTotal;
+    _progressBar.hidden=!_updating || !_updateTotal || [self downloadFraction]>=0;
     _progressBar.progress=_updateTotal?(float)((double)_updateDone/_updateTotal):0;
     NSString *title=nil, *detail=nil, *action=nil;
     BOOL enabled=NO;
@@ -1229,6 +1274,12 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
             }
         }
         action=WKLocalized(@"home.action.updating");
+        double fraction=[self downloadFraction];
+        if (fraction>=0) {
+            NSNumberFormatter *percent=[NSNumberFormatter new];
+            percent.locale=WKLocalization.shared.locale; percent.numberStyle=NSNumberFormatterPercentStyle;
+            action=WKLocalizedFormat(@"home.action.downloading",[percent stringFromNumber:@(floor(fraction*100)/100)]);
+        }
     } else if (_busy) {
         title=WKLocalized(@"home.status.checking");
         detail=WKLocalized(@"home.status.checking.detail");

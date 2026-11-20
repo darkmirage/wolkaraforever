@@ -43,6 +43,9 @@ UIColor *WKDisabledOnFill(void);
 /// A light wash for a control's resting fill, and a stronger one for its selection.
 UIColor *WKWash(void);
 UIColor *WKSelectionWash(void);
+/// The filled part of a progress bar that carries white words: the gold, deep enough that the
+/// words read on it (5.1:1) as well as on the unfilled track (8.5:1).
+UIColor *WKGoldDeep(void);
 /// What dims the page behind something modal that is drawn by hand.
 UIColor *WKScrim(void);
 

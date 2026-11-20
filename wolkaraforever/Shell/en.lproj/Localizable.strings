@@ -139,6 +139,7 @@
 "home.action.close" = "Close WolkaraForever";
 "home.action.retry" = "Try again";
 "home.status.updating" = "Updating your game…";
+"home.action.downloading" = "Downloading · %@";
 "home.action.updating" = "Updating…";
 "home.status.checking" = "Checking for updates…";
 "home.status.checking.detail" = "Checking the latest version and your installed copy.";

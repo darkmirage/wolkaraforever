@@ -136,6 +136,7 @@
 "home.action.close" = "Fermer WolkaraForever";
 "home.action.retry" = "Réessayer";
 "home.status.updating" = "Mise à jour du jeu…";
+"home.action.downloading" = "Téléchargement · %@";
 "home.action.updating" = "Mise à jour…";
 "home.status.checking" = "Recherche de mises à jour…";
 "home.status.checking.detail" = "Comparaison de la dernière version avec votre copie installée.";

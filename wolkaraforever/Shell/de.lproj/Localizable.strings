@@ -139,6 +139,7 @@
 "home.action.close" = "WolkaraForever schließen";
 "home.action.retry" = "Erneut versuchen";
 "home.status.updating" = "Ihr Spiel wird aktualisiert …";
+"home.action.downloading" = "Wird geladen · %@";
 "home.action.updating" = "Aktualisierung läuft …";
 "home.status.checking" = "Suche nach Aktualisierungen …";
 "home.status.checking.detail" = "Die neueste Version und Ihre installierte Kopie werden geprüft.";

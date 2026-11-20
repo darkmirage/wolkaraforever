@@ -1,4 +1,4 @@
-# WolkaraForever layer patch 0072 - project: the iPhone launcher may be upright
+# WolkaraForever layer patch 0901 - project: the iPhone launcher may be upright
 #
 # Why: the Duo's cover screen is an upright screen, and on a phone the launcher was
 # landscape-only, so changing a setting meant turning the phone sideways. The launcher's

@@ -216,6 +216,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     NSMutableDictionary<NSString *, TKListSection *> *_sections;
     TKListSwitchRow *_gamepadRow, *_overlayRow, *_soundRow;
     UITabBarController *_tabs;
+    NSDictionary<NSString *, NSArray<UIMenuElement *> *(^)(void)> *_menuProviders;
     // Set from the moment Play turns a phone's scene sideways until a start fails: the launcher
     // is upright or sideways on a phone, the game only sideways.
     BOOL _landscapeForGame;
@@ -507,6 +508,7 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     _tabs.view.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
     [self.view addSubview:_tabs.view];
     [_tabs didMoveToParentViewController:self];
+    [self attachMenus];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(foreground:)
         name:UIApplicationDidBecomeActiveNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(inactive:)
@@ -581,6 +583,35 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         [scroll scrollRectToVisible:CGRectInset(frame,0,-24) animated:NO];
         return;
     }
+}
+// A choice row opens its choices where the finger is, as a pull-down menu built from the same
+// sheet its action presents: VoiceOver, a keyboard and the tests still reach the sheet through
+// the row's action, and both offer exactly the same list.
+- (void)attachMenus {
+    __weak TKWoWViewController *weakSelf=self;
+    NSArray<UIMenuElement *> *(^edition)(void)=^{ return TKMenuElementsFromSheet([weakSelf editionSheet]); };
+    _menuProviders=@{
+        @"wow.edition": edition,
+        @"wow.play.edition": edition,
+        @"wow.language": ^{ return TKMenuElementsFromSheet([weakSelf appLanguageSheet]); },
+        @"wow.launcher.interfaceMode": ^{ return TKMenuElementsFromSheet([weakSelf interfaceModeSheet]); },
+        @"wow.performance.deviceProfile": ^{ return TKMenuElementsFromSheet([weakSelf deviceProfileSheet]); },
+        @"wow.performance.renderProfile": ^{ return TKMenuElementsFromSheet([weakSelf renderProfileSheet]); },
+        // Region and the game's language are two short lists under one row: two sections of one menu.
+        @"wow.preferences": ^{
+            NSMutableArray<UIMenuElement *> *both=[NSMutableArray new];
+            [both addObjectsFromArray:TKMenuElementsFromSheet([weakSelf preferenceSheet:YES])];
+            [both addObjectsFromArray:TKMenuElementsFromSheet([weakSelf preferenceSheet:NO])];
+            return (NSArray<UIMenuElement *> *)both;
+        },
+    };
+    for (UIButton *row in @[_editionButton,_editionTitleButton,_languageButton,_interfaceModeButton,
+                             _deviceProfileButton,_renderProfileButton,_preferencesButton])
+        TKAttachMenu(row, _menuProviders[row.accessibilityIdentifier]);
+}
+- (NSArray<UIMenuElement *> *)menuElementsForRow:(NSString *)identifier {
+    NSArray<UIMenuElement *> *(^provider)(void)=_menuProviders[identifier];
+    return provider ? provider() : @[];
 }
 - (void)selectTab:(NSUInteger)index {
     [self loadViewIfNeeded];
@@ -985,7 +1016,8 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 // The app's own language. The choice is English, German, or follow the iPad; the row above
 // it is the *game's* language and is a different setting entirely, which the sheet says.
-- (void)chooseAppLanguage {
+- (void)chooseAppLanguage { [self presentSheet:[self appLanguageSheet] anchor:_languageButton]; }
+- (UIAlertController *)appLanguageSheet {
     WKLocalization *localization=WKLocalization.shared;
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"lang.title")
         message:WKLocalized(@"lang.message") preferredStyle:UIAlertControllerStyleActionSheet];
@@ -996,12 +1028,10 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
         NSString *title=language==WKAppLanguageSystem
             ? [NSString stringWithFormat:@"%@ (%@)", WKLocalized(@"lang.system"), localization.resolvedLanguageName]
             : [WKLocalization nativeNameForLanguage:language];
-        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            (void)action;
-            [self applyAppLanguage:language];
-        }]];
+        if (localization.language==language) title=[@"✓ " stringByAppendingString:title];
+        [sheet addAction:TKChoice(title, UIAlertActionStyleDefault, ^{ [self applyAppLanguage:language]; })];
     }
-    [self presentSheet:sheet anchor:_languageButton];
+    return sheet;
 }
 - (void)applyAppLanguage:(WKAppLanguage)language {
     WKLocalization *localization=WKLocalization.shared;
@@ -1280,16 +1310,15 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     });
 }
 - (void)chooseEdition { [self chooseEditionAnchoredAt:_editionButton]; }
-- (void)chooseEditionAnchoredAt:(UIView *)anchor {
+- (void)chooseEditionAnchoredAt:(UIView *)anchor { [self presentSheet:[self editionSheet] anchor:anchor]; }
+- (UIAlertController *)editionSheet {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.edition.title") message:nil preferredStyle:UIAlertControllerStyleActionSheet];
     for (NSDictionary *product in TKWoWProducts()) {
         NSString *title=product[@"name"];
         if ([product isEqual:_product]) title=[@"✓ " stringByAppendingString:title];
-        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            (void)action; [self selectProduct:product];
-        }]];
+        [sheet addAction:TKChoice(title, UIAlertActionStyleDefault, ^{ [self selectProduct:product]; })];
     }
-    [self presentSheet:sheet anchor:anchor];
+    return sheet;
 }
 // The game's download language, through the one writer. The app's language is a different
 // setting and lives on its own row; both routes that change the game's language - this
@@ -1306,15 +1335,19 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     [NSUserDefaults.standardUserDefaults setObject:value forKey:@"WoWLocale"];
     [self refresh];
 }
-- (void)choosePreference:(BOOL)region {
+- (void)choosePreference:(BOOL)region { [self presentSheet:[self preferenceSheet:region] anchor:_preferencesButton]; }
+- (UIAlertController *)preferenceSheet:(BOOL)region {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:region?WKLocalized(@"home.preferences.region"):WKLocalized(@"home.preferences.downloadLanguage") message:nil preferredStyle:UIAlertControllerStyleActionSheet];
     NSArray *values=region?@[@"eu",@"us",@"kr",@"tw"]:@[@"enUS",@"frFR",@"esES",@"deDE"];
-    for (NSString *value in values) [sheet addAction:[UIAlertAction actionWithTitle:region?TKWoWRegionName(value):TKWoWLocaleName(value) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        (void)action;
-        if (region) { self->_region=value; [NSUserDefaults.standardUserDefaults setObject:value forKey:@"WoWRegion"]; [self refresh]; }
-        else [self setGameLocale:value];
-    }]];
-    [self presentSheet:sheet anchor:_preferencesButton];
+    for (NSString *value in values) {
+        NSString *title=region?TKWoWRegionName(value):TKWoWLocaleName(value);
+        if ([value isEqual:region?_region:_locale]) title=[@"✓ " stringByAppendingString:title];
+        [sheet addAction:TKChoice(title, UIAlertActionStyleDefault, ^{
+            if (region) { self->_region=value; [NSUserDefaults.standardUserDefaults setObject:value forKey:@"WoWRegion"]; [self refresh]; }
+            else [self setGameLocale:value];
+        })];
+    }
+    return sheet;
 }
 - (void)preferences {
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.preferences.title")
@@ -1821,7 +1854,11 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
 // Which device this is, and which profile it is rendering with. An override is named as one on
 // every surface it appears on, because it is a comparison and not a claim about this iPad.
 - (void)chooseDeviceProfile {
-    if (_busy || _starting || _running || _sessionUsed) { WKLog("ui", @"device profile: declined while the page is busy"); return; }
+    UIAlertController *sheet=[self deviceProfileSheet];
+    if (sheet) [self presentSheet:sheet anchor:_deviceProfileButton];
+}
+- (UIAlertController *)deviceProfileSheet {
+    if (_busy || _starting || _running || _sessionUsed) { WKLog("ui", @"device profile: declined while the page is busy"); return nil; }
     TKDeviceProfile *actual=[self thisDeviceProfile];
     NSString *actualName=actual.displayName.length?actual.displayName:WKLocalized(@"home.profile.unknown");
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.profile.title")
@@ -1830,12 +1867,11 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
     NSString *override=[self deviceProfileOverrideIdentifier];
     // Automatic first: it is the recommendation and the way back from an override.
     NSString *automaticTitle=WKLocalizedFormat(@"home.profile.automatic",actualName);
-    [sheet addAction:[UIAlertAction actionWithTitle:override?automaticTitle
-        :[@"✓ " stringByAppendingString:automaticTitle] style:UIAlertActionStyleDefault
-        handler:^(__unused UIAlertAction *action) {
+    [sheet addAction:TKChoice(override?automaticTitle:[@"✓ " stringByAppendingString:automaticTitle],
+        UIAlertActionStyleDefault, ^{
         [self writeDeviceProfileOverride:nil quality:[self effectiveRenderQuality]];
         [self render];
-    }]];
+    })];
     for (TKDeviceProfile *profile in TKDeviceProfile.profiles) {
         // The device we are on is the Automatic action above, not a choice of its own.
         if ([profile.identifier isEqual:actual.identifier]) continue;
@@ -1843,22 +1879,25 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
         NSString *size=TKDeviceProfileSizeDescription(profile);
         NSString *title=size.length?[NSString stringWithFormat:@"%@ — %@",profile.displayName,size]:profile.displayName;
         if (chosen) title=[@"✓ " stringByAppendingString:title];
-        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
-            handler:^(__unused UIAlertAction *action) {
+        [sheet addAction:TKChoice(title, UIAlertActionStyleDefault, ^{
             [self writeDeviceProfileOverride:profile.identifier quality:[self effectiveRenderQuality]];
             [self render];
             [self presentMessage:WKLocalized(@"home.profile.override.title")
                 message:WKLocalizedFormat(@"home.profile.override.message",profile.displayName,actualName)];
-        }]];
+        })];
     }
-    [self presentSheet:sheet anchor:_deviceProfileButton];
+    return sheet;
 }
 // The render profile is Forever's own scale and nothing else. It used to write the game's
 // Config.wtf and take a UI backup on the way; the plan this page follows says a performance
 // choice never edits the game's files, so that part is gone. Reset to Default Graphical
 // Settings is the row that touches those, and it says so.
 - (void)chooseRenderProfile {
-    if (_busy || _starting || _running || _sessionUsed) return;
+    UIAlertController *sheet=[self renderProfileSheet];
+    if (sheet) [self presentSheet:sheet anchor:_renderProfileButton];
+}
+- (UIAlertController *)renderProfileSheet {
+    if (_busy || _starting || _running || _sessionUsed) return nil;
     TKDeviceProfile *device=[self selectedDeviceProfile];
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.render.title")
         message:WKLocalizedFormat(@"home.render.message",[self deviceProfileName])
@@ -1872,12 +1911,9 @@ static NSString *TKRenderQualityTitle(TKDeviceProfile *profile, TKRenderQuality 
         if (quality>device.highestQuality || [device backingScaleForQuality:quality]<=0) continue;
         NSString *title=TKRenderQualityTitle(device,quality);
         if (quality==current) title=[@"✓ " stringByAppendingString:title];
-        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
-            handler:^(__unused UIAlertAction *action) {
-            [self applyRenderQuality:quality];
-        }]];
+        [sheet addAction:TKChoice(title, UIAlertActionStyleDefault, ^{ [self applyRenderQuality:quality]; })];
     }
-    [self presentSheet:sheet anchor:_renderProfileButton];
+    return sheet;
 }
 - (void)applyRenderQuality:(TKRenderQuality)quality {
     TKDeviceProfile *device=[self selectedDeviceProfile];
@@ -1950,9 +1986,13 @@ static NSString *InterfaceModeLabel(NSString *name) {
 // Which interface this launcher drives: Automatic, iPad, iPhone, or iPhone Duo. Automatic is the
 // device's own answer and is labelled with what it resolves to. An explicit choice always wins.
 - (void)chooseInterfaceMode {
+    UIAlertController *sheet=[self interfaceModeSheet];
+    if (sheet) [self presentSheet:sheet anchor:_interfaceModeButton];
+}
+- (UIAlertController *)interfaceModeSheet {
     if (_busy || _starting || _running || _sessionUsed) {
         WKLog("ui", @"interface mode: declined while the page is busy");
-        return;
+        return nil;
     }
     NSString *current=AKInterfaceModeStoredName();
     UIAlertController *sheet=[UIAlertController alertControllerWithTitle:WKLocalized(@"home.launcher.interfaceMode.title")
@@ -1967,12 +2007,9 @@ static NSString *InterfaceModeLabel(NSString *name) {
     for (NSArray<NSString *> *choice in choices) {
         NSString *title=choice[1];
         if ([current isEqualToString:choice[0]]) title=[@"✓ " stringByAppendingString:title];
-        [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault
-            handler:^(__unused UIAlertAction *action) {
-            [self applyInterfaceModeNamed:choice[0]];
-        }]];
+        [sheet addAction:TKChoice(title, UIAlertActionStyleDefault, ^{ [self applyInterfaceModeNamed:choice[0]]; })];
     }
-    [self presentSheet:sheet anchor:_interfaceModeButton];
+    return sheet;
 }
 // One key, and nothing else. A mode is a setting the guest reads on its next use; it is not
 // an installation, a disable, a removal or an update, and this path touches no package.

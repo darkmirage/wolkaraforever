@@ -64,4 +64,16 @@ typedef NS_ENUM(NSInteger, TKListTint) {
 - (void)addArrangedView:(UIView *)view;
 @end
 
+/// A choice in a picker. The page builds each picker once, as an alert sheet of these, and the
+/// same sheet becomes the row's pull-down menu: one list, so the menu a finger opens and the sheet
+/// VoiceOver, a keyboard and the tests open cannot offer different things.
+FOUNDATION_EXPORT UIAlertAction *TKChoice(NSString *title, UIAlertActionStyle style, void (^handler)(void));
+/// The sheet's choices as menu items, under its title. A choice written "✓ Name" is a checked
+/// "Name"; the cancel action is left out, because a menu is dismissed by tapping away.
+FOUNDATION_EXPORT NSArray<UIMenuElement *> *TKMenuElementsFromSheet(UIAlertController *_Nullable sheet);
+/// Runs what a menu item made by TKMenuElementsFromSheet runs. For the page's own tests.
+FOUNDATION_EXPORT BOOL TKPerformMenuAction(UIMenuElement *element);
+/// Makes a press on `button` open a menu built afresh each time from `provider`.
+FOUNDATION_EXPORT void TKAttachMenu(UIButton *button, NSArray<UIMenuElement *> *(^provider)(void));
+
 NS_ASSUME_NONNULL_END

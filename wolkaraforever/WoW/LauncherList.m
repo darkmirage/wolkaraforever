@@ -1,5 +1,6 @@
 #import "LauncherList.h"
 #import "../App/WolkaraForeverTheme.h"
+#import <objc/runtime.h>
 
 static const CGFloat TKListTileSize = 30;
 static const CGFloat TKListInset = 16;
@@ -380,3 +381,50 @@ static UILabel *TKListLabel(UIFontTextStyle style, UIColor *color) {
     [_column addArrangedSubview:view];
 }
 @end
+
+#pragma mark - Choices and menus
+
+static const void *TKChoiceHandlerKey=&TKChoiceHandlerKey;
+
+UIAlertAction *TKChoice(NSString *title, UIAlertActionStyle style, void (^handler)(void)) {
+    void (^run)(void)=[handler copy];
+    UIAlertAction *action=[UIAlertAction actionWithTitle:title style:style handler:^(__unused UIAlertAction *a) { run(); }];
+    objc_setAssociatedObject(action, TKChoiceHandlerKey, run, OBJC_ASSOCIATION_COPY_NONATOMIC);
+    return action;
+}
+
+NSArray<UIMenuElement *> *TKMenuElementsFromSheet(UIAlertController *sheet) {
+    if (!sheet) return @[];
+    NSMutableArray<UIMenuElement *> *items=[NSMutableArray new];
+    for (UIAlertAction *choice in sheet.actions) {
+        void (^run)(void)=objc_getAssociatedObject(choice, TKChoiceHandlerKey);
+        if (choice.style==UIAlertActionStyleCancel || !run) continue;
+        NSString *title=choice.title ?: @"";
+        BOOL checked=[title hasPrefix:@"✓ "];
+        if (checked) title=[title substringFromIndex:2];
+        UIAction *item=[UIAction actionWithTitle:title image:nil identifier:nil handler:^(__unused UIAction *a) { run(); }];
+        item.state=checked?UIMenuElementStateOn:UIMenuElementStateOff;
+        if (choice.style==UIAlertActionStyleDestructive) item.attributes=UIMenuElementAttributesDestructive;
+        if (!choice.enabled) item.attributes|=UIMenuElementAttributesDisabled;
+        objc_setAssociatedObject(item, TKChoiceHandlerKey, run, OBJC_ASSOCIATION_COPY_NONATOMIC);
+        [items addObject:item];
+    }
+    if (!items.count) return @[];
+    return @[[UIMenu menuWithTitle:sheet.title ?: @"" image:nil identifier:nil
+                           options:UIMenuOptionsDisplayInline children:items]];
+}
+
+BOOL TKPerformMenuAction(UIMenuElement *element) {
+    void (^run)(void)=objc_getAssociatedObject(element, TKChoiceHandlerKey);
+    if (!run) return NO;
+    run();
+    return YES;
+}
+
+void TKAttachMenu(UIButton *button, NSArray<UIMenuElement *> *(^provider)(void)) {
+    NSArray<UIMenuElement *> *(^build)(void)=[provider copy];
+    UIDeferredMenuElement *deferred=[UIDeferredMenuElement elementWithUncachedProvider:
+        ^(void (^completion)(NSArray<UIMenuElement *> *)) { completion(build() ?: @[]); }];
+    button.menu=[UIMenu menuWithChildren:@[deferred]];
+    button.showsMenuAsPrimaryAction=YES;
+}

@@ -141,6 +141,12 @@ static NSString *RowText(UIView *view) {
     UIButton *button=(UIButton *)view;
     return button.configuration.title ?: [button titleForState:UIControlStateNormal];
 }
+// A sheet's titles without the tick that marks the choice in use.
+static NSArray<NSString *> *Unticked(NSArray<NSString *> *titles) {
+    NSMutableArray *plain=[NSMutableArray new];
+    for (NSString *title in titles) [plain addObject:[title hasPrefix:@"✓ "]?[title substringFromIndex:2]:title];
+    return plain;
+}
 static NSString *UnchosenInterfaceModeRow(void) {
     return UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPhone
         ? @"Interface Mode: Automatic (iPhone Duo)" : @"Interface Mode: iPad";
@@ -1107,7 +1113,7 @@ static void TestIPadM5RenderProfile(void) {
     assert([languages isKindOfClass:UIAlertController.class]);
     // French is a game language now, between English and Spanish as the downloader's own
     // list orders it, and it is named in the launcher's language rather than the game's.
-    assert(([[languages.actions valueForKey:@"title"] isEqual:@[@"English",@"French",@"Spanish",@"German",@"Cancel"]]));
+    assert(([[languages.actions valueForKey:@"title"] isEqual:@[@"English",@"French",@"Spanish",@"✓ German",@"Cancel"]]));
     [languages dismissViewControllerAnimated:NO completion:nil];
     [self.controller setValue:@"enUS" forKey:@"_locale"];
     [self.controller render];
@@ -2508,7 +2514,7 @@ static int backupsBeforePerformance;
 - (void)checkNestedSheetOpened {
     UIAlertController *picker = WaitForSheetTitled(self.controller, @"Download language", 20.0);
     assert(picker != nil);
-    NSArray *titles = [picker.actions valueForKey:@"title"];
+    NSArray *titles = Unticked([picker.actions valueForKey:@"title"]);
     assert([titles containsObject:@"German"]);
     assert([titles containsObject:@"Spanish"]);
     [self dismissPresented];
@@ -2525,7 +2531,10 @@ static int backupsBeforePerformance;
     UIAlertController *sheet = WaitForSheetTitled(self.controller, @"App language", 20.0);
     assert(sheet != nil);
     assert([sheet.message containsString:@"game language"]);
-    NSArray *titles = [sheet.actions valueForKey:@"title"];
+    // Exactly one choice carries the tick: the one in use.
+    assert([[[sheet.actions valueForKey:@"title"] filteredArrayUsingPredicate:
+        [NSPredicate predicateWithFormat:@"SELF BEGINSWITH '✓ '"]] count] == 1);
+    NSArray *titles = Unticked([sheet.actions valueForKey:@"title"]);
     assert([titles containsObject:@"English"]);
     assert([titles containsObject:@"Deutsch"]);
     assert([titles containsObject:@"System Default (English)"]);
@@ -2881,7 +2890,7 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     assert(regions != nil);
     assert(CancelActions(regions) == 1);
     assert([[regions.actions valueForKey:@"title"]
-        isEqualToArray:(@[@"Europe", @"Americas", @"Korea", @"Taiwan", @"Cancel"])]);
+        isEqualToArray:(@[@"✓ Europe", @"Americas", @"Korea", @"Taiwan", @"Cancel"])]);
     UIAlertAction *americas = nil;
     for (UIAlertAction *action in regions.actions) if ([action.title isEqual:@"Americas"]) americas = action;
     assert(americas != nil);
@@ -2973,6 +2982,53 @@ static NSArray<NSString *> *VisibleTexts(UIView *view) {
     [self.controller.navigationController popToRootViewControllerAnimated:NO];
     assert(self.controller.navigationController.topViewController == self.controller);
     [self.controller selectTab:0];
+
+    // --- choice rows open a pull-down menu, built from the same list as their sheet
+    [self.controller render];
+    for (NSString *identifier in @[@"wow.edition", @"wow.play.edition", @"wow.language", @"wow.preferences",
+                                   @"wow.launcher.interfaceMode", @"wow.performance.deviceProfile",
+                                   @"wow.performance.renderProfile"]) {
+        UIButton *row = (UIButton *)FindHome(self.controller, identifier);
+        if (!row) row = [self.controller valueForKey:@"_editionTitleButton"];
+        assert(row.showsMenuAsPrimaryAction && row.menu != nil);
+        NSArray<UIMenuElement *> *sections = [self.controller menuElementsForRow:identifier];
+        assert(sections.count >= 1);
+        NSUInteger checked = 0, items = 0;
+        for (UIMenu *section in sections) {
+            assert([section isKindOfClass:UIMenu.class] && section.title.length);
+            for (UIAction *item in section.children) {
+                assert([item isKindOfClass:UIAction.class] && ![item.title hasPrefix:@"✓"]);
+                items++;
+                if (item.state == UIMenuElementStateOn) checked++;
+            }
+        }
+        NSLog(@"MENU %@: %lu section(s), %lu item(s), %lu checked", identifier,
+              (unsigned long)sections.count, (unsigned long)items, (unsigned long)checked);
+        // Exactly one tick per list: the menu says what is chosen, as Settings does.
+        assert(checked == sections.count);
+    }
+    // A picture of a menu as a finger opens it. Not a baseline: a menu's arrival is animated by
+    // the system and is evidence for a person to look at, not a pixel contract.
+    if (@available(iOS 17.4, *)) {
+        UIButton *mode = [self row:@"wow.launcher.interfaceMode"];
+        [self.window layoutIfNeeded];
+        [mode performPrimaryAction];
+        Pump(1.2);
+        [self capture:@"menu-interface-mode.png"];
+        [mode.contextMenuInteraction dismissMenu];
+        Pump(0.8);
+    }
+    // Choosing from the menu is choosing: the interface mode goes to iPhone and back.
+    NSString *modeBefore = [NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForeverInterfaceModeV1"];
+    UIAction *iphone = nil;
+    for (UIAction *item in ((UIMenu *)[self.controller menuElementsForRow:@"wow.launcher.interfaceMode"].firstObject).children)
+        if ([item.title isEqual:@"iPhone"]) iphone = item;
+    assert(iphone != nil && TKPerformMenuAction(iphone));
+    assert([[NSUserDefaults.standardUserDefaults stringForKey:@"WolkaraForeverInterfaceModeV1"] isEqual:@"ios"]);
+    assert([RowText(FindHome(self.controller, @"wow.launcher.interfaceMode")) isEqual:@"Interface Mode: iPhone"]);
+    if (modeBefore) [NSUserDefaults.standardUserDefaults setObject:modeBefore forKey:@"WolkaraForeverInterfaceModeV1"];
+    else [NSUserDefaults.standardUserDefaults removeObjectForKey:@"WolkaraForeverInterfaceModeV1"];
+    [self.controller render];
 
     // --- and no control on the page is dead: every one has a target and an action
     for (NSString *identifier in @[@"wow.edition", @"wow.preferences", @"wow.language",

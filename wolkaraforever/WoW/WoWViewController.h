@@ -43,5 +43,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)revealView:(UIView *)view;
 - (void)selectTab:(NSUInteger)index;
 @property(nonatomic, readonly) NSUInteger selectedTab;
+/// The pull-down menu a choice row opens, as it would be built now. Empty for a row with none.
+- (NSArray<UIMenuElement *> *)menuElementsForRow:(NSString *)identifier;
 @end
 NS_ASSUME_NONNULL_END

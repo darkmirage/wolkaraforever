@@ -24,24 +24,83 @@
 # Applies to: translation/CoreAudio/Hardware.m, translation/AudioToolbox/Output.m
 # Upstream: candidate (the iPad showed the plug-ins gone and the sound fine, 18 Nov 2026).
 #
+# Rebased onto Tolkara edc3628: upstream added its own opt-in session-only audio
+# (TOLKARA_SESSION_AUDIO_ONLY, SessionAudio.h, device AK_SESSION_OUTPUT_DEVICE) and an
+# autorelease pool around every entry point. Upstream's session-only branch is checked first
+# in every entry point and avoidHAL() stands aside while it is set; the model's code runs
+# inside the pools; the property API takes upstream's unconditional 'sOut'/'dIn ' answers,
+# with 'dIn ' the model's device only while the model is on.
+#
+diff --git a/translation/AudioToolbox/Output.m b/translation/AudioToolbox/Output.m
+index 38bdf21..ba3d8a3 100644
+--- a/translation/AudioToolbox/Output.m
++++ b/translation/AudioToolbox/Output.m
+@@ -4,6 +4,7 @@
+ #import "SessionAudio.h"
+ #include <dlfcn.h>
+ #include <stdatomic.h>
++#import "AKAudioModel.h"
+ // The probe wraps every audio callback and scans its output.  Audio playback
+ // itself is required for background survival; this measurement is not.
+ static BOOL renderProbeEnabled(void) {
+@@ -67,14 +68,24 @@ static BOOL remoteOutput(AudioUnit unit) {
+     AudioComponent component=AudioComponentInstanceGetComponent(unit);
+     return component && !AudioComponentGetDescription(component,&description) && description.componentType==kAudioUnitType_Output && description.componentSubType==kAudioUnitSubType_RemoteIO;
+ }
++// Patch 0065: with the HAL avoided (AKAudioModel.h) the game's device is the CoreAudio adapter's model, the session's
++// route, and iOS's HAL is never asked; TKAudioToolboxHALForwards counts the calls that do go to it (for the tests).
++static _Atomic unsigned halForwards;
++unsigned TKAudioToolboxHALForwards(void) { return halForwards; }
+ static OSStatus defaultOutput(UInt32 *device) {
+     if(AKSessionAudioOnly()) {
+         if(!AVAudioSession.sharedInstance.currentRoute.outputs.count)return kAudioUnitErr_InvalidPropertyValue;
+         *device=AK_SESSION_OUTPUT_DEVICE;return 0;
+     }
++    // The platform's session-only mode above wins; otherwise the CoreAudio adapter's model.
++    if(AKAudioAvoidHAL()) {
++        if(!AVAudioSession.sharedInstance.currentRoute.outputs.count)return kAudioUnitErr_InvalidPropertyValue;
++        *device=AKAudioModelDevice;return 0;
++    }
+     static OSStatus (*get)(UInt32,UInt32 *,void *);static dispatch_once_t once;
+     dispatch_once(&once,^{void *library=dlopen("/System/Library/Frameworks/CoreAudio.framework/CoreAudio",RTLD_NOW|RTLD_LOCAL);get=library?dlsym(library,"AudioHardwareGetProperty"):NULL;});
+     if(!get || !AVAudioSession.sharedInstance.currentRoute.outputs.count)return kAudioUnitErr_InvalidPropertyValue;
++    halForwards++;
+     UInt32 size=sizeof *device;return get('dOut',&size,device);
+ }
+ AudioComponent AudioComponentFindNext(AudioComponent previous,const AudioComponentDescription *description) {
+@@ -94,6 +105,11 @@ AudioComponent AudioComponentFindNext(AudioComponent previous,const AudioCompone
+         dispatch_once(&once,^{ ask=(TKWolkaraForeverPlaybackRequest)dlsym(RTLD_DEFAULT,"TKWolkaraForeverRequestGamePlayback"); });
+         BOOL active=ask?ask():NO;
+         AKLog(@"audio playback session active=%d",active);
++        static dispatch_once_t said;
++        dispatch_once(&said,^{
++            if(AKAudioAvoidHAL())AKLogC("audio: HAL avoided (RemoteIO)");
++            else AKLogC("audio: RemoteIO with its device from iOS's HAL (WolkaraForeverAudioAvoidHAL is off)");
++        });
+     }
+     AudioComponent component=f(previous,&mapped);
+     AKLogC("audio component type=%#x subtype=%#x mapped=%#x found=%d",(unsigned)description->componentType,(unsigned)description->componentSubType,(unsigned)mapped.componentSubType,component!=NULL);
+diff --git a/translation/CoreAudio/Hardware.m b/translation/CoreAudio/Hardware.m
+index b4e0926..40053b5 100644
 --- a/translation/CoreAudio/Hardware.m
 +++ b/translation/CoreAudio/Hardware.m
-@@ -3,6 +3,7 @@
- #import "AKSupport.h"
+@@ -4,6 +4,7 @@
+ #import "SessionAudio.h"
  #include <dlfcn.h>
  #include <math.h>
 +#import "AKAudioModel.h"
  typedef UInt32 AudioDeviceID;
  typedef OSStatus (*HardwareListener)(UInt32,void *);
  static _Atomic(UInt32) defaultOutputDevice;
-@@ -50,8 +51,25 @@
+@@ -52,9 +53,27 @@ static OSStatus copyName(UInt32 capacity,UInt32 *size,void *data) {
      if(!size || !data || capacity<required)return '!siz';
      memcpy(data,bytes.bytes,bytes.length);((char *)data)[bytes.length]=0;return 0;
  }
 +// Patch 0065 (WolkaraForever): the game's sound without iOS's HAL (AKAudioModel.h says why). The switch is read once,
-+// at the game's first sound call, and said in the log.
++// at the game's first sound call, and said in the log. The platform's own session-only mode (TOLKARA_SESSION_AUDIO_ONLY,
++// SessionAudio.h) is checked first everywhere and answers without any HAL; the model stands aside for it.
 +static BOOL avoidHAL(void) {
-+    BOOL avoid=AKAudioAvoidHAL();
++    BOOL avoid=AKAudioAvoidHAL() && !AKSessionAudioOnly();
 +    static dispatch_once_t once;
 +    dispatch_once(&once,^{
 +        if(avoid)AKLogC("audio: HAL model answers the game (one output device, the session's route); iOS's HAL is not called");
@@ -54,13 +113,14 @@
 +static _Atomic unsigned halForwards;
 +unsigned TKCoreAudioHALForwards(void) { return halForwards; }
  static void *native(const char *name) {
+     if(AKSessionAudioOnly())return NULL;
      static void *library; static dispatch_once_t once;
 +    halForwards++;
 +    if(avoidHAL()) { static _Atomic unsigned said; if(said++<16)AKLogC("audio: HAL fallback (%s): not in the model, iOS's HAL answers",name); }
      dispatch_once(&once,^{library=dlopen("/System/Library/Frameworks/CoreAudio.framework/CoreAudio",RTLD_NOW|RTLD_LOCAL);});
      return library?dlsym(library,name):NULL;
  }
-@@ -60,21 +78,91 @@
+@@ -63,6 +82,47 @@ static void report(const char *operation,UInt32 property,OSStatus status,UInt32
      @synchronized(NSProcessInfo.class) { if(count++>=64)return; }
      AKLogC("audio %s property=%c%c%c%c status=%d size=%u",operation,(property>>24)&255,(property>>16)&255,(property>>8)&255,property&255,(int)status,(unsigned)size);
  }
@@ -105,37 +165,48 @@
 +        default: return NO;
 +    }
 +}
- OSStatus AudioHardwareGetPropertyInfo(UInt32 property,UInt32 *size,Boolean *writable) {
-+    UInt32 answered=avoidHAL()?modelHardwareSize(property):0;
-+    if(answered) {
-+        if(size)*size=answered==UINT32_MAX?0:answered;
-+        if(writable)*writable=false;
-+        report(__func__,property,0,size?*size:0);return 0;
-+    }
-     OSStatus (*f)(UInt32,UInt32 *,Boolean *)=native(__func__);
-     OSStatus s=f?f(property,size,writable):-4;report(__func__,property,s,s==0&&size?*size:0);return s;
- }
- OSStatus AudioHardwareGetProperty(UInt32 property,UInt32 *size,void *data) {
-+    UInt32 answered=avoidHAL()?modelHardwareSize(property):0;
-+    if(answered) {
-+        OSStatus s=0;
-+        if(answered==UINT32_MAX) { if(size)*size=0; }
-+        else if(!size || !data || *size<answered)s='!siz';
-+        else {
-+            UInt32 device=AKAudioModelDevice;memcpy(data,&device,sizeof device);*size=sizeof device;
-+            if(property=='dOut') { defaultOutputDevice=device;AKLogC("audio default output device=%u (the model's)",(unsigned)device); }
+ // Wine calls these C entry points on long-lived pthreads without Cocoa pools.
+ // Both AVAudioSession and native HAL plugins can autorelease temporary objects.
+ // Drain them per call; returned CF strings retain their existing +1 ownership.
+@@ -75,6 +135,12 @@ OSStatus AudioHardwareGetPropertyInfo(UInt32 property,UInt32 *size,Boolean *writ
+             if(writable)*writable=false;
+             return 0;
+         }
++        UInt32 answered=avoidHAL()?modelHardwareSize(property):0;
++        if(answered) {
++            if(size)*size=answered==UINT32_MAX?0:answered;
++            if(writable)*writable=false;
++            report(__func__,property,0,size?*size:0);return 0;
 +        }
-+        report(__func__,property,s,s==0&&size?*size:0);return s;
-+    }
-     OSStatus (*f)(UInt32,UInt32 *,void *)=native(__func__);
-     OSStatus s=f?f(property,size,data):-4;
-     if(!s && property=='dOut' && size && *size==sizeof(UInt32) && data) { UInt32 device;memcpy(&device,data,sizeof device);defaultOutputDevice=device;AKLogC("audio default output device=%u",(unsigned)device); }
-     report(__func__,property,s,s==0&&size?*size:0);return s;
+         OSStatus (*f)(UInt32,UInt32 *,Boolean *)=native(__func__);
+         OSStatus s=f?f(property,size,writable):-4;report(__func__,property,s,s==0&&size?*size:0);return s;
+     }
+@@ -91,6 +157,17 @@ OSStatus AudioHardwareGetProperty(UInt32 property,UInt32 *size,void *data) {
+             if(required)memcpy(data,&device,required);
+             return 0;
+         }
++        UInt32 answered=avoidHAL()?modelHardwareSize(property):0;
++        if(answered) {
++            OSStatus s=0;
++            if(answered==UINT32_MAX) { if(size)*size=0; }
++            else if(!size || !data || *size<answered)s='!siz';
++            else {
++                UInt32 device=AKAudioModelDevice;memcpy(data,&device,sizeof device);*size=sizeof device;
++                if(property=='dOut') { defaultOutputDevice=device;AKLogC("audio default output device=%u (the model's)",(unsigned)device); }
++            }
++            report(__func__,property,s,s==0&&size?*size:0);return s;
++        }
+         OSStatus (*f)(UInt32,UInt32 *,void *)=native(__func__);
+         OSStatus s=f?f(property,size,data):-4;
+         if(!s && property=='dOut' && size && *size==sizeof(UInt32) && data) { UInt32 device;memcpy(&device,data,sizeof device);defaultOutputDevice=device;AKLogC("audio default output device=%u",(unsigned)device); }
+@@ -99,12 +176,24 @@ OSStatus AudioHardwareGetProperty(UInt32 property,UInt32 *size,void *data) {
  }
  OSStatus AudioHardwareAddPropertyListener(UInt32 property,HardwareListener listener,void *context) {
-+    if(avoidHAL()) { report(__func__,property,0,0);return 0; }
-     OSStatus (*f)(UInt32,HardwareListener,void *)=native(__func__);
-     OSStatus s=f?f(property,listener,context):-4;report(__func__,property,s,0);return s;
+     @autoreleasepool {
++        if(avoidHAL()) { report(__func__,property,0,0);return 0; }
+         OSStatus (*f)(UInt32,HardwareListener,void *)=native(__func__);
+         OSStatus s=f?f(property,listener,context):-4;report(__func__,property,s,0);return s;
+     }
  }
 +OSStatus AudioHardwareRemovePropertyListener(UInt32 property,HardwareListener listener) {
 +    if(avoidHAL())return 0;
@@ -143,18 +214,19 @@
 +    return f?f(property,listener):-4;
 +}
  OSStatus AudioDeviceGetPropertyInfo(AudioDeviceID device,UInt32 channel,Boolean input,UInt32 property,UInt32 *size,Boolean *writable) {
-+    UInt32 answered=0;OSStatus status=0;
-+    if(isModel(device) && modelDeviceSize(property,&answered,&status)) {
-+        if(!status) { if(size)*size=answered;if(writable)*writable=false; }
-+        report(__func__,property,status,status==0&&size?*size:0);return status;
-+    }
-+    device=nativeObject(device);
-     OSStatus (*f)(AudioDeviceID,UInt32,Boolean,UInt32,UInt32 *,Boolean *)=native(__func__);
-     OSStatus s=f?f(device,channel,input,property,size,writable):-4;
-     if(s && device==defaultOutputDevice && !input && property=='name') { NSString *name=outputName();if(name) { if(size)*size=(UInt32)[name lengthOfBytesUsingEncoding:NSUTF8StringEncoding]+1;if(writable)*writable=false;s=0; } }
-@@ -84,27 +172,53 @@
+     @autoreleasepool {
++        UInt32 answered=0;OSStatus status=0;
++        if(isModel(device) && modelDeviceSize(property,&answered,&status)) {
++            if(!status) { if(size)*size=answered;if(writable)*writable=false; }
++            report(__func__,property,status,status==0&&size?*size:0);return status;
++        }
++        device=nativeObject(device);
+         OSStatus (*f)(AudioDeviceID,UInt32,Boolean,UInt32,UInt32 *,Boolean *)=native(__func__);
+         OSStatus s=f?f(device,channel,input,property,size,writable):-4;
+         if(s && device==defaultOutputDevice && !input && property=='name') { NSString *name=outputName();if(name) { if(size)*size=(UInt32)[name lengthOfBytesUsingEncoding:NSUTF8StringEncoding]+1;if(writable)*writable=false;s=0; } }
+@@ -115,31 +204,57 @@ OSStatus AudioDeviceGetPropertyInfo(AudioDeviceID device,UInt32 channel,Boolean
+         report(__func__,property,s,s==0&&size?*size:0);return s;
      }
-     report(__func__,property,s,s==0&&size?*size:0);return s;
  }
 +// The route's nominal rate ('nsrt') or IO buffer frames ('fsz#'), from the activated audio session.
 +static OSStatus routeFormat(UInt32 property,UInt32 capacity,UInt32 *size,void *data) {
@@ -168,41 +240,45 @@
 +    return s;
 +}
  OSStatus AudioDeviceGetProperty(AudioDeviceID device,UInt32 channel,Boolean input,UInt32 property,UInt32 *size,void *data) {
-+    UInt32 capacity=size?*size:0;
-+    if(isModel(device) && (property=='name' || property=='nsrt' || property=='fsz#' || property=='srnd')) {
-+        OSStatus s;
-+        if(property=='name')s=copyName(capacity,size,data);
-+        else if(property=='srnd') {
-+            if(!size || !data || capacity<modelLayoutSize) { if(size)*size=modelLayoutSize;s='!siz'; }
-+            else { modelLayout(data);*size=modelLayoutSize;s=0; }
-+        } else s=routeFormat(property,capacity,size,data);
-+        report(__func__,property,s,s==0&&size?*size:0);return s;
-+    }
-+    device=nativeObject(device);
-     OSStatus (*f)(AudioDeviceID,UInt32,Boolean,UInt32,UInt32 *,void *)=native(__func__);
--    UInt32 capacity=size?*size:0;OSStatus s=f?f(device,channel,input,property,size,data):-4;
-+    OSStatus s=f?f(device,channel,input,property,size,data):-4;
-     if(s && device==defaultOutputDevice && !input && property=='name')s=copyName(capacity,size,data);
--    if(device==defaultOutputDevice && !input && (property=='nsrt' || property=='fsz#')) {
--        // The legacy iOS hardware API may return success with a zero nominal
--        // rate. RemoteIO's route comes from the activated audio session.
--        NSString *route=outputName();AVAudioSession *session=AVAudioSession.sharedInstance;
--        Float64 rate=session.sampleRate;UInt32 frames=(UInt32)llround(rate*session.IOBufferDuration);
--        UInt32 required=property=='nsrt'?sizeof rate:sizeof frames;
--        if(!route || rate<=0 || (property=='fsz#' && !frames))s='what';
--        else if(!size || !data || capacity<required) { if(size)*size=required;s='!siz'; }
--        else { memcpy(data,property=='nsrt'?(const void *)&rate:(const void *)&frames,required);*size=required;s=0; }
--        AKLogC("audio route nominal_rate=%.0f buffer_frames=%u",rate,(unsigned)frames);
--    }
-+    // The legacy iOS hardware API may return success with a zero nominal
-+    // rate. RemoteIO's route comes from the activated audio session.
-+    if(device==defaultOutputDevice && !input && (property=='nsrt' || property=='fsz#'))s=routeFormat(property,capacity,size,data);
-     report(__func__,property,s,s==0&&size?*size:0);return s;
+     @autoreleasepool {
++        UInt32 capacity=size?*size:0;
++        if(isModel(device) && (property=='name' || property=='nsrt' || property=='fsz#' || property=='srnd')) {
++            OSStatus s;
++            if(property=='name')s=copyName(capacity,size,data);
++            else if(property=='srnd') {
++                if(!size || !data || capacity<modelLayoutSize) { if(size)*size=modelLayoutSize;s='!siz'; }
++                else { modelLayout(data);*size=modelLayoutSize;s=0; }
++            } else s=routeFormat(property,capacity,size,data);
++            report(__func__,property,s,s==0&&size?*size:0);return s;
++        }
++        device=nativeObject(device);
+         OSStatus (*f)(AudioDeviceID,UInt32,Boolean,UInt32,UInt32 *,void *)=native(__func__);
+-        UInt32 capacity=size?*size:0;OSStatus s=f?f(device,channel,input,property,size,data):-4;
++        OSStatus s=f?f(device,channel,input,property,size,data):-4;
+         if(s && device==defaultOutputDevice && !input && property=='name')s=copyName(capacity,size,data);
+-        if(device==defaultOutputDevice && !input && (property=='nsrt' || property=='fsz#')) {
+-            // The legacy iOS hardware API may return success with a zero nominal
+-            // rate. RemoteIO's route comes from the activated audio session.
+-            NSString *route=outputName();AVAudioSession *session=AVAudioSession.sharedInstance;
+-            Float64 rate=session.sampleRate;UInt32 frames=(UInt32)llround(rate*session.IOBufferDuration);
+-            UInt32 required=property=='nsrt'?sizeof rate:sizeof frames;
+-            if(!route || rate<=0 || (property=='fsz#' && !frames))s='what';
+-            else if(!size || !data || capacity<required) { if(size)*size=required;s='!siz'; }
+-            else { memcpy(data,property=='nsrt'?(const void *)&rate:(const void *)&frames,required);*size=required;s=0; }
+-            AKLogC("audio route nominal_rate=%.0f buffer_frames=%u",rate,(unsigned)frames);
+-        }
++        // The legacy iOS hardware API may return success with a zero nominal
++        // rate. RemoteIO's route comes from the activated audio session.
++        if(device==defaultOutputDevice && !input && (property=='nsrt' || property=='fsz#'))s=routeFormat(property,capacity,size,data);
+         report(__func__,property,s,s==0&&size?*size:0);return s;
+     }
  }
  OSStatus AudioDeviceSetProperty(AudioDeviceID device,const void *when,UInt32 channel,Boolean input,UInt32 property,UInt32 size,const void *data) {
-+    device=nativeObject(device);
-     OSStatus (*f)(AudioDeviceID,const void *,UInt32,Boolean,UInt32,UInt32,const void *)=native(__func__);
-     OSStatus s=f?f(device,when,channel,input,property,size,data):-4;report(__func__,property,s,size);return s;
+     @autoreleasepool {
++        device=nativeObject(device);
+         OSStatus (*f)(AudioDeviceID,const void *,UInt32,Boolean,UInt32,UInt32,const void *)=native(__func__);
+         OSStatus s=f?f(device,when,channel,input,property,size,data):-4;report(__func__,property,s,size);return s;
+     }
  }
 +typedef OSStatus (*DeviceListener)(AudioDeviceID,UInt32,Boolean,UInt32,void *);
 +OSStatus AudioDeviceAddPropertyListener(AudioDeviceID device,UInt32 channel,Boolean input,UInt32 property,DeviceListener listener,void *context) {
@@ -215,63 +291,64 @@
 +    OSStatus (*f)(AudioDeviceID,UInt32,Boolean,UInt32,DeviceListener)=native(__func__);
 +    return f?f(device,channel,input,property,listener):-4;
 +}
--
-+
+ 
  // The property API (Wine's Mac audio driver asks through it). iPadOS's own
  // answers name no device with output channels; the one output device is the
-@@ -118,6 +232,7 @@
- static NSString *const AKOutputUID=@"TolkaraOutput";
+@@ -154,6 +269,7 @@ static NSString *const AKOutputUID=@"TolkaraOutput";
  static AudioDeviceID routeDevice(void) {
      if(!outputName())return 0;
+     if(AKSessionAudioOnly()) { defaultOutputDevice=AK_SESSION_OUTPUT_DEVICE;return AK_SESSION_OUTPUT_DEVICE; }
 +    if(avoidHAL())return AKAudioModelDevice;
      OSStatus (*get)(UInt32,UInt32 *,void *)=native("AudioHardwareGetProperty");
      UInt32 device=0,size=sizeof device;
      return get && !get('dOut',&size,&device) && size==sizeof device ? device : 0;
-@@ -125,7 +240,13 @@
+@@ -161,7 +277,12 @@ static AudioDeviceID routeDevice(void) {
  // The size of a property this adapter answers, or 0 when the system answers.
  static UInt32 answeredSize(UInt32 object,const AKPropertyAddress *address,AudioDeviceID route) {
      if(!route || !address)return 0;
--    if(object==1)return address->mSelector=='dOut' || address->mSelector=='dev#' ? sizeof(AudioDeviceID) : 0;
+-    if(object==1)return address->mSelector=='dOut' || address->mSelector=='sOut' || address->mSelector=='dIn ' || address->mSelector=='dev#' ? sizeof(AudioDeviceID) : 0;
 +    if(object==1) {
 +        switch(address->mSelector) {
-+            case 'dOut': case 'dev#': return sizeof(AudioDeviceID);
-+            case 'dIn ': case 'sOut': return avoidHAL()?sizeof(AudioDeviceID):0;   // the model's, as the legacy API
++            case 'dOut': case 'sOut': case 'dIn ': case 'dev#': return sizeof(AudioDeviceID);
 +            default: return 0;
 +        }
 +    }
      if(object!=route)return 0;
      switch(address->mSelector) {
          case 'slay': return (UInt32)(offsetof(AudioBufferList,mBuffers)+(address->mScope=='inpt'?0:sizeof(AudioBuffer)));
-@@ -139,7 +260,7 @@
- OSStatus AudioObjectGetPropertyDataSize(UInt32 object,const AKPropertyAddress *address,UInt32 qualifierSize,const void *qualifier,UInt32 *size) {
-     UInt32 answered=answeredSize(object,address,routeDevice());
-     if(answered) { if(!size)return '!siz';*size=answered==UINT32_MAX?0:answered;return 0; }
--    PropertySize f=native(__func__);return f?f(object,address,qualifierSize,qualifier,size):'who?';
-+    PropertySize f=native(__func__);return f?f(nativeObject(object),address,qualifierSize,qualifier,size):'who?';
+@@ -176,7 +297,7 @@ OSStatus AudioObjectGetPropertyDataSize(UInt32 object,const AKPropertyAddress *a
+     @autoreleasepool {
+         UInt32 answered=answeredSize(object,address,routeDevice());
+         if(answered) { if(!size)return '!siz';*size=answered==UINT32_MAX?0:answered;return 0; }
+-        PropertySize f=native(__func__);return f?f(object,address,qualifierSize,qualifier,size):'who?';
++        PropertySize f=native(__func__);return f?f(nativeObject(object),address,qualifierSize,qualifier,size):'who?';
+     }
  }
  OSStatus AudioObjectGetPropertyData(UInt32 object,const AKPropertyAddress *address,UInt32 qualifierSize,const void *qualifier,UInt32 *size,void *data) {
-     AudioDeviceID route=routeDevice();
-@@ -147,12 +268,12 @@
-     if(route && object==1 && address && address->mSelector=='uidd' && qualifierSize==sizeof(CFStringRef) && qualifier && size && *size>=sizeof route && data &&
-        [(__bridge NSString *)*(CFStringRef const *)qualifier isEqualToString:AKOutputUID]) { memcpy(data,&route,sizeof route);*size=sizeof route;return 0; }
-     UInt32 answered=answeredSize(object,address,route);
--    if(!answered) { PropertyData f=native(__func__);return f?f(object,address,qualifierSize,qualifier,size,data):'who?'; }
-+    if(!answered) { PropertyData f=native(__func__);return f?f(nativeObject(object),address,qualifierSize,qualifier,size,data):'who?'; }
-     if(answered==UINT32_MAX) { if(size)*size=0;return 0; }
-     if(!size || !data || *size<answered)return '!siz';
-     AVAudioSession *session=AVAudioSession.sharedInstance;
-     switch(address->mSelector) {
--        case 'dOut': case 'dev#': memcpy(data,&route,sizeof route);break;
-+        case 'dOut': case 'dev#': case 'dIn ': case 'sOut': memcpy(data,&route,sizeof route);break;
-         case 'slay': {
-             AudioBufferList *buffers=data;
-             buffers->mNumberBuffers=address->mScope=='inpt'?0:1;
-@@ -169,5 +290,39 @@
- OSStatus AudioObjectSetPropertyData(UInt32 object,const AKPropertyAddress *address,UInt32 qualifierSize,const void *qualifier,UInt32 size,const void *data) {
-     // The route's volume belongs to the user; a program's own level is applied in its mix.
-     if(address && address->mSelector=='volm' && object && object==routeDevice())return 0;
--    PropertySet f=native(__func__);return f?f(object,address,qualifierSize,qualifier,size,data):'who?';
-+    PropertySet f=native(__func__);return f?f(nativeObject(object),address,qualifierSize,qualifier,size,data):'who?';
+@@ -186,13 +307,14 @@ OSStatus AudioObjectGetPropertyData(UInt32 object,const AKPropertyAddress *addre
+         if(route && object==1 && address && address->mSelector=='uidd' && qualifierSize==sizeof(CFStringRef) && qualifier && size && *size>=sizeof route && data &&
+            [(__bridge NSString *)*(CFStringRef const *)qualifier isEqualToString:AKOutputUID]) { memcpy(data,&route,sizeof route);*size=sizeof route;return 0; }
+         UInt32 answered=answeredSize(object,address,route);
+-        if(!answered) { PropertyData f=native(__func__);return f?f(object,address,qualifierSize,qualifier,size,data):'who?'; }
++        if(!answered) { PropertyData f=native(__func__);return f?f(nativeObject(object),address,qualifierSize,qualifier,size,data):'who?'; }
+         if(answered==UINT32_MAX) { if(size)*size=0;return 0; }
+         if(!size || !data || *size<answered)return '!siz';
+         AVAudioSession *session=AVAudioSession.sharedInstance;
+         switch(address->mSelector) {
+             case 'dOut': case 'sOut': case 'dev#': memcpy(data,&route,sizeof route);break;
+-            case 'dIn ': { UInt32 input=0;memcpy(data,&input,sizeof input);break; }
++            // The model's device is its input too, as the legacy API answers; otherwise there is none.
++            case 'dIn ': { UInt32 input=avoidHAL()?route:0;memcpy(data,&input,sizeof input);break; }
+             case 'slay': {
+                 AudioBufferList *buffers=data;
+                 buffers->mNumberBuffers=address->mScope=='inpt'?0:1;
+@@ -211,6 +333,40 @@ OSStatus AudioObjectSetPropertyData(UInt32 object,const AKPropertyAddress *addre
+     @autoreleasepool {
+         // The route's volume belongs to the user; a program's own level is applied in its mix.
+         if(address && address->mSelector=='volm' && object && object==routeDevice())return 0;
+-        PropertySet f=native(__func__);return f?f(object,address,qualifierSize,qualifier,size,data):'who?';
++        PropertySet f=native(__func__);return f?f(nativeObject(object),address,qualifierSize,qualifier,size,data):'who?';
+     }
  }
 +// The rest of the property API the model answers without iOS (patch 0065): whether it has a property, whether one can
 +// be set (nothing of the model's), and listeners on the system or the model's device (taken, never called). With the
@@ -307,45 +384,3 @@
 +    if(modelObject(object))return 0;
 +    OSStatus (*f)(UInt32,const AKPropertyAddress *,dispatch_queue_t,ObjectListenerBlock)=native(__func__);return f?f(object,address,queue,listener):'who?';
 +}
---- a/translation/AudioToolbox/Output.m
-+++ b/translation/AudioToolbox/Output.m
-@@ -3,6 +3,7 @@
- #import "AKSupport.h"
- #include <dlfcn.h>
- #include <stdatomic.h>
-+#import "AKAudioModel.h"
- // The probe wraps every audio callback and scans its output.  Audio playback
- // itself is required for background survival; this measurement is not.
- static BOOL renderProbeEnabled(void) {
-@@ -57,10 +58,19 @@
-     AudioComponent component=AudioComponentInstanceGetComponent(unit);
-     return component && !AudioComponentGetDescription(component,&description) && description.componentType==kAudioUnitType_Output && description.componentSubType==kAudioUnitSubType_RemoteIO;
- }
-+// Patch 0065: with the HAL avoided (AKAudioModel.h) the game's device is the CoreAudio adapter's model, the session's
-+// route, and iOS's HAL is never asked; TKAudioToolboxHALForwards counts the calls that do go to it (for the tests).
-+static _Atomic unsigned halForwards;
-+unsigned TKAudioToolboxHALForwards(void) { return halForwards; }
- static OSStatus defaultOutput(UInt32 *device) {
-+    if(AKAudioAvoidHAL()) {
-+        if(!AVAudioSession.sharedInstance.currentRoute.outputs.count)return kAudioUnitErr_InvalidPropertyValue;
-+        *device=AKAudioModelDevice;return 0;
-+    }
-     static OSStatus (*get)(UInt32,UInt32 *,void *);static dispatch_once_t once;
-     dispatch_once(&once,^{void *library=dlopen("/System/Library/Frameworks/CoreAudio.framework/CoreAudio",RTLD_NOW|RTLD_LOCAL);get=library?dlsym(library,"AudioHardwareGetProperty"):NULL;});
-     if(!get || !AVAudioSession.sharedInstance.currentRoute.outputs.count)return kAudioUnitErr_InvalidPropertyValue;
-+    halForwards++;
-     UInt32 size=sizeof *device;return get('dOut',&size,device);
- }
- AudioComponent AudioComponentFindNext(AudioComponent previous,const AudioComponentDescription *description) {
-@@ -80,6 +90,11 @@
-         dispatch_once(&once,^{ ask=(TKWolkaraForeverPlaybackRequest)dlsym(RTLD_DEFAULT,"TKWolkaraForeverRequestGamePlayback"); });
-         BOOL active=ask?ask():NO;
-         AKLog(@"audio playback session active=%d",active);
-+        static dispatch_once_t said;
-+        dispatch_once(&said,^{
-+            if(AKAudioAvoidHAL())AKLogC("audio: HAL avoided (RemoteIO)");
-+            else AKLogC("audio: RemoteIO with its device from iOS's HAL (WolkaraForeverAudioAvoidHAL is off)");
-+        });
-     }
-     AudioComponent component=f(previous,&mapped);
-     AKLogC("audio component type=%#x subtype=%#x mapped=%#x found=%d",(unsigned)description->componentType,(unsigned)description->componentSubType,(unsigned)mapped.componentSubType,component!=NULL);

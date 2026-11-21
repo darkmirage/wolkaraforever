@@ -10,30 +10,12 @@
 # Applies to: tools/install.sh, tools/build_shims.py
 # Upstream: candidate.
 #
-diff --git a/tools/install.sh b/tools/install.sh
-index 3ae5a52..7245f0f 100755
---- a/tools/install.sh
-+++ b/tools/install.sh
-@@ -38,12 +38,12 @@ xcodebuild -resolvePackageDependencies -project Tolkara.xcodeproj -scheme Tolkara \
- # NATIVE_GUEST_SHIMS=YES builds and signs only Tolkara's translation libraries
- # for the API surface those executables import. They stay outside the app.
- # GENERIC builds one adapter per framework instead, for no executable.
--xcodebuild -project Tolkara.xcodeproj -scheme Tolkara -destination "platform=iOS,id=$DEVICE" \
-+xcodebuild -project Tolkara.xcodeproj -scheme Tolkara -configuration Release -destination "platform=iOS,id=$DEVICE" \
-     -derivedDataPath build/device -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
-     GUEST_EXE="$GUEST_EXE" NATIVE_GUEST_SHIMS="$SHIMS" TOLKARA_PROFILE="${TOLKARA_PROFILE:-}" TOLKARA_MODE="${TOLKARA_MODE:-}" \
-     build > "$LOG" 2>&1 \
-     || { grep -E "error:" "$LOG" | head -20; echo "BUILD FAILED -> $LOG"; exit 1; }
--xcrun devicectl device install app --device "$DEVICE" build/device/Build/Products/Debug-iphoneos/Tolkara.app
-+xcrun devicectl device install app --device "$DEVICE" build/device/Build/Products/Release-iphoneos/Tolkara.app
- case "${TOLKARA_MODE:-}" in
- local-signing)
-     # Each container is a copy of one executable's final code pages, signed with
 diff --git a/tools/build_shims.py b/tools/build_shims.py
-index 2f41d3f..f1a6e66 100755
+index cba5000..e8dd1f6 100755
 --- a/tools/build_shims.py
 +++ b/tools/build_shims.py
-@@ -35,5 +35,5 @@ SDKNAME = {"ios": "iphoneos", "iossim": "iphonesimulator"}[platform]
+@@ -38,7 +38,7 @@ plan = {"sdk": "", "translation": {}} if generic else json.load(open(surface))
+ SDKNAME = {"ios": "iphoneos", "iossim": "iphonesimulator"}[platform]
  TARGET = {"ios": "arm64-apple-ios17.0", "iossim": "arm64-apple-ios17.0-simulator"}[platform]
  SDK = subprocess.run(["xcrun", "--sdk", SDKNAME, "--show-sdk-path"], capture_output=True, text=True, check=True).stdout.strip()
 -CC = ["xcrun", "--sdk", SDKNAME, "clang", "-target", TARGET, "-isysroot", SDK, "-O1", "-g", "-fobjc-arc",
@@ -41,3 +23,23 @@ index 2f41d3f..f1a6e66 100755
        "-I", os.path.join(ROOT, "translation/AKSupport"), "-Wno-deprecated-declarations"]
  if generic:
      plan["sdk"] = SDK   # sdk_tbd() below rewrites paths from the SDK classify used
+diff --git a/tools/install.sh b/tools/install.sh
+index 8265eee..5344d1a 100755
+--- a/tools/install.sh
++++ b/tools/install.sh
+@@ -38,13 +38,13 @@ xcodebuild -resolvePackageDependencies -project Tolkara.xcodeproj -scheme Tolkar
+ # NATIVE_GUEST_SHIMS=YES builds and signs only Tolkara's translation libraries
+ # for the API surface those executables import. They stay outside the app.
+ # GENERIC builds one adapter per framework instead, for no executable.
+-xcodebuild -project Tolkara.xcodeproj -scheme Tolkara -destination "platform=iOS,id=$DEVICE" \
++xcodebuild -project Tolkara.xcodeproj -scheme Tolkara -configuration Release -destination "platform=iOS,id=$DEVICE" \
+     -derivedDataPath build/device -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
+     GUEST_EXE="$GUEST_EXE" NATIVE_GUEST_SHIMS="$SHIMS" TOLKARA_PROFILE="${TOLKARA_PROFILE:-}" TOLKARA_MODE="${TOLKARA_MODE:-}" \
+     TOLKARA_SYSTEM_ROOTS="${TOLKARA_SYSTEM_ROOTS:-YES}" \
+     build > "$LOG" 2>&1 \
+     || { grep -E "error:" "$LOG" | head -20; echo "BUILD FAILED -> $LOG"; exit 1; }
+-xcrun devicectl device install app --device "$DEVICE" build/device/Build/Products/Debug-iphoneos/Tolkara.app
++xcrun devicectl device install app --device "$DEVICE" build/device/Build/Products/Release-iphoneos/Tolkara.app
+ case "${TOLKARA_MODE:-}" in
+ local-signing)
+     # Each container is a copy of one executable's final code pages, signed with

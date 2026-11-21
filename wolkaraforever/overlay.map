@@ -173,12 +173,14 @@ wolkaraforever/Touch/InterfaceMode.h translation/AppKit/InterfaceMode.h add
 wolkaraforever/Touch/InterfaceMode.h launcher/WoW/InterfaceMode.h add
 wolkaraforever/Touch/InterfaceMode.m translation/AppKit/InterfaceMode.m add
 wolkaraforever/Touch/InterfaceMode.m launcher/WoW/InterfaceMode.m add
+wolkaraforever/Touch/LayerTrackpad.c translation/AppKit/LayerTrackpad.c add
+wolkaraforever/Touch/LayerTrackpad.h translation/AppKit/LayerTrackpad.h add
 wolkaraforever/Touch/LayoutStore.h translation/AppKit/LayoutStore.h add
 wolkaraforever/Touch/LayoutStore.h launcher/WoW/LayoutStore.h add
 wolkaraforever/Touch/LayoutStore.m translation/AppKit/LayoutStore.m add
 wolkaraforever/Touch/LayoutStore.m launcher/WoW/LayoutStore.m add
-wolkaraforever/Touch/TouchCamera.h translation/AppKit/TouchCamera.h add
-wolkaraforever/Touch/TouchCamera.m translation/AppKit/TouchCamera.m add
+wolkaraforever/Touch/TouchCameraGesture.h translation/AppKit/TouchCameraGesture.h add
+wolkaraforever/Touch/TouchCameraGesture.m translation/AppKit/TouchCameraGesture.m add
 wolkaraforever/Touch/TouchControllerLog.h translation/AppKit/TouchControllerLog.h add
 wolkaraforever/Touch/TouchControllerLog.m translation/AppKit/TouchControllerLog.m add
 wolkaraforever/Touch/TouchControls.h translation/AppKit/TouchControls.h replace
@@ -268,6 +270,7 @@ wolkaraforever/CoreAudio/AKAudioModel.h translation/AKSupport/AKAudioModel.h add
 wolkaraforever/CoreAudio/AKAudioModel.h launcher/WoW/AKAudioModel.h add
 wolkaraforever/CoreAudio/tests/test_audio_hardware.m tests/test_audio_hardware.m replace
 wolkaraforever/CoreAudio/tests/test_audio_tone.m tests/test_audio_tone.m add
+wolkaraforever/CoreAudio/tests/test_session_audio.m tests/test_session_audio.m replace
 #
 # Addons: the bundled Interface mobile add-on package - one versioned ZIP of the
 # reviewed Lua in addons/WolkaraRoue, and the manifest that binds it to its release

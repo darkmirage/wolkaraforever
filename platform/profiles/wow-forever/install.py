@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Copy your own installed WoW Forever (Classic beta) files into the Tolkara app's Documents.
+"""Copy your own installed WoW Forever files into the Tolkara app's Documents.
 
 The executable and bundle resources are copied unchanged. Of the settings, only
 the region and languages the game saved on this Mac are copied, never account
@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tools'))
+import build_info
 import first_run
 import localenv
 BUNDLE_ID=localenv.bundle_id()
@@ -30,21 +31,26 @@ def main():
     parser.add_argument('--device',default=localenv.load().get('DEVICE'),help='iPad UDID (default: DEVICE in local.env)')
     parser.add_argument('--source',type=Path,default=Path('/Applications/World of Warcraft'))
     parser.add_argument('--skip-data',action='store_true')
+    parser.add_argument('--skip-version-check',action='store_true',help='copy even when Battle.net has not finished an update')
     args=parser.parse_args()
     if not args.device: parser.error('set DEVICE in local.env or pass --device')
     os.chdir(localenv.ROOT)
     os.environ.setdefault('DEVELOPER_DIR','/Applications/Xcode.app/Contents/Developer')
     source=args.source.resolve(); stage=Path('build/game-data/World of Warcraft')
-    app=Path('_classic_beta_/World of Warcraft Beta.app/Contents')
+    app=Path('_forever_/World of Warcraft.app/Contents')
     executable=app/'MacOS/World of Warcraft'
-    if not (source/executable).is_file(): parser.error('original Classic beta executable not found')
+    if not (source/executable).is_file(): parser.error('original WoW Forever executable not found')
     if not args.skip_data and not (source/'Data').is_dir(): parser.error('game Data directory not found')
+    # An executable and a .build.info that disagree (an update under way) make a
+    # copy the client cannot start from: stop before anything reaches the device.
+    incomplete=None if args.skip_version_check else build_info.check(source,'_forever_',app/'Info.plist')
+    if incomplete: sys.exit(incomplete)
     # Region and languages saved by the game's first start on this Mac, merged
     # into the device's own settings (first_run.py); stops here when there are none.
     first_run.stage(source,stage,'World of Warcraft',Path(__file__).parent,args.device,BUNDLE_ID)
     (stage/app/'MacOS').mkdir(parents=True,exist_ok=True)
     for name in ['.build.info','.flavor.info']:
-        for parent in [Path('.'),Path('_classic_beta_')]:
+        for parent in [Path('.'),Path('_forever_')]:
             item=source/parent/name
             if item.is_file():
                 (stage/parent).mkdir(parents=True,exist_ok=True); shutil.copy2(item,stage/parent/name)
@@ -54,16 +60,21 @@ def main():
     shutil.copy2(source/executable,stage/executable)
     if sha256(stage/executable)!=before or sha256(source/executable)!=before:
         raise RuntimeError('original executable changed while staging')
-    # Files beside the executable, unchanged: the Classic beta keeps its ICU
+    # Files beside the executable, unchanged: WoW Forever keeps its ICU
     # data there (icudt78l.dat) and reports an error at every start without it.
     for item in sorted((source/executable).parent.iterdir()):
         if item.is_file() and item.name!=executable.name: shutil.copy2(item,stage/executable.parent/item.name)
-    for name in ['Logs','WTF','Cache']: (stage/'_classic_beta_'/name).mkdir(exist_ok=True)
+    for name in ['Logs','WTF','Cache']: (stage/'_forever_'/name).mkdir(exist_ok=True)
     def transfer(path,destination):
         subprocess.run(['xcrun','devicectl','device','copy','to','--device',args.device,
             '--domain-type','appDataContainer','--domain-identifier',BUNDLE_ID,
             '--source',str(path),'--destination',destination],check=True)
-    transfer(stage,'Documents/World of Warcraft')
+    # Only this game's folder and the install's own files: the stage is shared
+    # with the other World of Warcraft profile, whose older staged executable
+    # would otherwise go to the device beside a newer .build.info.
+    for item in sorted(stage.iterdir()):
+        if item.is_file(): transfer(item,'Documents/World of Warcraft/'+item.name)
+    transfer(stage/'_forever_','Documents/World of Warcraft/_forever_')
     nibs=Path('build/guest-module/Nibs')
     if nibs.is_dir(): transfer(nibs,'Documents/GuestCompatibility/Nibs')
     if not args.skip_data: transfer(source/'Data','Documents/World of Warcraft/Data')

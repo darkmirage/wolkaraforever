@@ -18,11 +18,16 @@
 // call the adapter hands to iOS. Spawned with `-WolkaraForeverAudioAvoidHAL '<false/>'` it is the old path: the same
 // answers, from iOS's HAL (forwards > 0), so the counter is shown to measure.
 //
+// The platform's own session-only mode (TOLKARA_SESSION_AUDIO_ONLY, SessionAudio.h; tools/test_translation_sim.sh runs
+// this test in it too) answers without any HAL and the model stands aside for it: there the game's own calls are not
+// part of the contract, the property API answers under AK_SESSION_OUTPUT_DEVICE, and nothing reaches iOS's HAL.
+//
 // Run in the simulator (tools/test_translation_sim.sh; both switch states: wolkaraforever/tools/test_audio_sim.sh).
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreAudioTypes/CoreAudioTypes.h>
 #import "AKAudioModel.h"
+#import "SessionAudio.h"
 #include <assert.h>
 typedef struct { UInt32 mSelector, mScope, mElement; } Address;
 typedef OSStatus (*HardwareListener)(UInt32, void *);
@@ -90,7 +95,8 @@ static UInt32 the_games_calls(void) {
 }
 
 int main(void) { @autoreleasepool {
-    BOOL avoid = AKAudioAvoidHALIn(NSUserDefaults.standardUserDefaults);
+    BOOL sessionOnly = AKSessionAudioOnly();
+    BOOL avoid = !sessionOnly && AKAudioAvoidHALIn(NSUserDefaults.standardUserDefaults);
     // A duplex host still has a real output route. The adapter must not disappear
     // the game device merely because dictation has enabled microphone input.
     AVAudioSession *session = AVAudioSession.sharedInstance;
@@ -98,7 +104,7 @@ int main(void) { @autoreleasepool {
                            mode:AVAudioSessionModeDefault
                         options:AVAudioSessionCategoryOptionMixWithOthers error:NULL]);
     assert(TKWolkaraForeverRequestGamePlayback());
-    UInt32 game = the_games_calls();
+    UInt32 game = sessionOnly ? 0 : the_games_calls();
     if (avoid) {
         assert(game == AKAudioModelDevice);
         // The model's answers: the input is the same device (iOS's HAL said so on the iPad), the legacy device list is
@@ -122,7 +128,7 @@ int main(void) { @autoreleasepool {
     }
     UInt32 legacy = 0, size = sizeof legacy;
     assert(!AudioHardwareGetProperty('dOut', &size, &legacy) && legacy);
-    assert(avoid ? legacy == AKAudioModelDevice : legacy != AKAudioModelDevice);
+    assert(sessionOnly ? legacy == AK_SESSION_OUTPUT_DEVICE : avoid ? legacy == AKAudioModelDevice : legacy != AKAudioModelDevice);
     Address devices = {'dev#', 'glob', 0}, fallback = {'dOut', 'glob', 0};
     UInt32 device = 0; size = 0;
     assert(!AudioObjectGetPropertyDataSize(1, &devices, 0, NULL, &size) && size == sizeof device);
@@ -154,7 +160,10 @@ int main(void) { @autoreleasepool {
     Address volume = {'volm', 'glob', 0}; Float32 level = 0.25f;
     assert(!AudioObjectSetPropertyData(device, &volume, 0, NULL, sizeof level, &level));
     puts("audio property API: one output device from the session's route, name, UID, rate, streams, latency and volume: PASS");
-    if (avoid) {
+    if (sessionOnly) {
+        assert(TKCoreAudioHALForwards() == 0);
+        puts("audio in the platform's session-only mode: its own answers, 0 calls reached iOS's HAL: PASS");
+    } else if (avoid) {
         // Listeners of every kind are taken without iOS (the model's device never changes: RemoteIO follows the
         // route itself), and what the model has is said to be there.
         Address defaultOutput = {'dOut', 'glob', 0};

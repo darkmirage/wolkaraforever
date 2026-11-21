@@ -83,7 +83,7 @@ struct ProfileError: LocalizedError {
 
 enum ProfileParser {
     static let required = ["id", "name", "workingDirectory", "executable"]
-    static let optional = ["notes", "tested", "caseAliases", "runtime", "arguments", "environment", "libraries", "codePool", "setup"]
+    static let optional = ["notes", "tested", "caseAliases", "runtime", "arguments", "environment", "libraries", "codePool", "processes", "setup", "steamCloud", "download"]
 
     static func relative(_ value: Any?) -> Bool {
         guard let value = value as? String, !value.isEmpty, !value.hasPrefix("/") else { return false }
@@ -117,6 +117,27 @@ enum ProfileParser {
         }
         let workingDirectory = profile["workingDirectory"] as! String
         let hasRuntime = profile["runtime"] != nil
+        if let pool = profile["codePool"] {
+            guard hasRuntime, let number = pool as? NSNumber,
+                  CFGetTypeID(number) != CFBooleanGetTypeID(),
+                  number.doubleValue == Double(number.intValue), (1...2048).contains(number.intValue) else {
+                throw ProfileError(message: "codePool must be a whole number of megabytes from 1 to 2048, with a runtime.")
+            }
+        }
+        // steamCloud is the iPad launcher's (tools/check_profile.py checks it in full).
+        if let cloud = profile["steamCloud"], !(cloud is [String: Any]) {
+            throw ProfileError(message: "steamCloud must be an object.")
+        }
+        // download is the iPad launcher's too (its experimental downloader): only
+        // which service it is, and that a "steam" one, alone, comes with a runtime.
+        if let download = profile["download"] {
+            guard let download = download as? [String: Any] else { throw ProfileError(message: "download must be an object.") }
+            switch download["service"] as? String {
+            case "blizzard": guard !hasRuntime else { throw ProfileError(message: "A \"blizzard\" download is not available for a profile with a runtime.") }
+            case "steam": guard hasRuntime else { throw ProfileError(message: "A \"steam\" download needs a profile with a runtime.") }
+            default: throw ProfileError(message: "download.service must be \"blizzard\" or \"steam\".")
+            }
+        }
         let setup = profile["setup"]
         var source: String?, installer: String?, getApp: AppProfile.GetApp?, firstRun: AppProfile.FirstRun?, risk: AppProfile.Risk?
         var destination = String(workingDirectory.split(separator: "/").first ?? "")

@@ -11,7 +11,7 @@ import Foundation
         // The output sink is never used: the probe refuses before a single packet
         // is written, which is itself part of what this asserts.
         probe.startAuthorization(deviceIdentifier:"fixture-device-with-no-enrollment",
-                                output:{ _ in
+                                servicePort:49152,output:{ _ in
             preconditionFailure("a helper with no enrollment must not reach the network")
         }, completion:{ text in
             report = text; done.signal()
@@ -30,7 +30,7 @@ import Foundation
         let second = DispatchSemaphore(value:0)
         var secondReport = ""
         probe.startAuthorization(deviceIdentifier:"fixture-device-with-no-enrollment",
-                                output:{ _ in true }, completion:{ text in
+                                servicePort:49152,output:{ _ in true }, completion:{ text in
             secondReport = text; second.signal()
         })
         precondition(second.wait(timeout:.now()+5) == .success,"the second attempt was not bounded")

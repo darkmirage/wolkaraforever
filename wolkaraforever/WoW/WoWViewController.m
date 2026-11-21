@@ -877,7 +877,9 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
     UIWindowScene *scene=self.view.window.windowScene;
     BOOL phone=UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPhone;
     if (phone) [self holdLandscape:YES];
-    if (!phone || !scene || UIInterfaceOrientationIsLandscape(scene.effectiveGeometry.interfaceOrientation)) {
+    // Sideways is not enough: an unfolded phone held sideways can show the launcher in one tall panel.
+    if (!phone || !scene || (UIInterfaceOrientationIsLandscape(scene.effectiveGeometry.interfaceOrientation) &&
+        scene.coordinateSpace.bounds.size.width>scene.coordinateSpace.bounds.size.height)) {
         if (self.startApp) self.startApp(app);
         return;
     }

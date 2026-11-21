@@ -8,6 +8,7 @@
 // SFSpeechRecognizer, because the speech permission is asked for here beside the microphone:
 // iPadOS lists a privacy row in Settings only after the app has asked for it once.
 #import <Speech/Speech.h>
+#include <dlfcn.h>
 #include <sys/stat.h>
 #import "AppLibrary.h"
 #import "ControllerProbe.h"
@@ -272,6 +273,18 @@ static NSString *TKModeUnavailableText(TKExecutionMode mode) {
 - (void)choose:(TKExecutionMode)mode {
     if (_chosen) _chosen(mode);
     [self.presentingViewController dismissViewControllerAnimated:YES completion:nil];
+}
+@end
+
+// The screen a start without the home page shows. On a phone it is sideways only: a game started
+// from it sizes its surface from this scene (patch 0046), and an upright or one-panel scene there
+// leaves the game drawing a tall picture stretched across a wide screen.
+@interface WKStatusController : UIViewController
+@end
+@implementation WKStatusController
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations {
+    return UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPhone
+        ? UIInterfaceOrientationMaskLandscape : UIInterfaceOrientationMaskAll;
 }
 @end
 
@@ -791,7 +804,7 @@ static NSString *AKAudioStateDescription(void) {
     [self performSelector:@selector(startGuest) withObject:nil afterDelay:0];
 }
 - (UIViewController *)statusController {
-    UIViewController *controller = [UIViewController new];
+    UIViewController *controller = [WKStatusController new];
     controller.view.backgroundColor = UIColor.systemBackgroundColor;
     self.status = [UILabel new];
     self.status.numberOfLines = 0;
@@ -1089,6 +1102,38 @@ static NSString *AKAudioStateDescription(void) {
 }
 // Developer service: the iPad's developer service prepares memory and detaches
 // before any application code runs.
+// The game sizes its surface from the scene when its first window opens (patch 0046), and the
+// launcher on a phone may be upright, or in one panel of an unfolded phone held sideways. A start
+// that skips the Play button (TKWoWViewController turns the scene there) waits here until the
+// scene is wider than tall, or two seconds.
+- (void)whenSceneIsLandscape:(dispatch_block_t)start {
+    UIWindowScene *scene=self.window.windowScene;
+    if (UIDevice.currentDevice.userInterfaceIdiom!=UIUserInterfaceIdiomPhone || !scene) { start(); return; }
+    CGSize size=scene.coordinateSpace.bounds.size;
+    if (UIInterfaceOrientationIsLandscape(scene.effectiveGeometry.interfaceOrientation) && size.width>size.height) { start(); return; }
+    WKLog("ui", @"start: turning the scene sideways before the game starts (%.0fx%.0f, orientation %ld)",
+          size.width, size.height, (long)scene.effectiveGeometry.interfaceOrientation);
+    [self.window.rootViewController setNeedsUpdateOfSupportedInterfaceOrientations];
+    [scene requestGeometryUpdateWithPreferences:[[UIWindowSceneGeometryPreferencesIOS alloc]
+        initWithInterfaceOrientations:UIInterfaceOrientationMaskLandscape] errorHandler:^(NSError *error) {
+        WKLog("ui", @"start: the scene would not turn sideways: %@", error.localizedDescription);
+    }];
+    [self whenLandscapeIn:scene start:start attempts:40];
+}
+- (void)whenLandscapeIn:(UIWindowScene *)scene start:(dispatch_block_t)start attempts:(NSInteger)attempts {
+    CGSize size=scene.coordinateSpace.bounds.size;
+    BOOL landscape=UIInterfaceOrientationIsLandscape(scene.effectiveGeometry.interfaceOrientation) && size.width>size.height;
+    if (landscape || attempts<=0) {
+        if (landscape) WKLog("ui", @"start: the scene is sideways (%.0fx%.0f); starting the game", size.width, size.height);
+        else WKLog("ui", @"start: starting before the scene turned sideways");
+        start();
+        return;
+    }
+    __weak AKHostSceneDelegate *weakSelf=self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.05*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+        [weakSelf whenLandscapeIn:scene start:start attempts:attempts-1];
+    });
+}
 - (void)launchLocalApp:(TKApp *)app {
     if(self.sessionUsed) {
         [self alert:WKLocalized(@"shell.reopen.title") message:WKLocalized(@"shell.reopen.message")];
@@ -1503,6 +1548,21 @@ static void TKScheduleSnapshots(NSArray<NSString *> *arguments, FILE *log) {
     fflush(log);
     [self showClosingPage:WKLocalized(@"shell.didNotStart")];
 }
+// Before its first window the game sizes its surface from NSScreen, which with nothing published is
+// UIScreen: on an unfolded Duo that is 466x678 upright while the scene is 951x669, and the game kept a
+// 466-wide surface after its window opened wide. The scene is published through the adapters' support
+// library, which they bind to by the same install name when the guest loads them.
+- (void)seedGuestDisplayFromScene {
+    UIWindowScene *scene=self.window.windowScene;
+    if (UIDevice.currentDevice.userInterfaceIdiom!=UIUserInterfaceIdiomPhone || !scene) return;
+    NSString *path=[NSBundle.mainBundle.privateFrameworksPath stringByAppendingPathComponent:@"libAKSupport.dylib"];
+    void *support=dlopen(path.fileSystemRepresentation,RTLD_NOW|RTLD_GLOBAL);
+    void (*publish)(CGSize,double)=support ? (void (*)(CGSize,double))dlsym(support,"AKSetGuestDisplayGeometry") : NULL;
+    if (!publish) { const char *why=dlerror(); WKLog("ui", @"start: the guest display was not seeded: %s", why?:"no support library"); return; }
+    CGSize size=scene.coordinateSpace.bounds.size, screen=UIScreen.mainScreen.bounds.size;
+    publish(size,scene.screen.maximumFramesPerSecond);
+    WKLog("ui", @"start: guest display %.0fx%.0f from the scene (UIScreen %.0fx%.0f)",size.width,size.height,screen.width,screen.height);
+}
 - (void)runNativeGame:(BOOL)fullStartup app:(TKApp *)app container:(NSString *)container {
     if (!self.cloudPrepared && [TKSteamCloudCoordinator configuredProfile:app.profile documents:TKDocumentsPath(@"") configuration:app.steamCloud]) {
         if(self.cloudPreparing)return;self.cloudPreparing=YES;
@@ -1528,6 +1588,7 @@ static void TKScheduleSnapshots(NSArray<NSString *> *arguments, FILE *log) {
         WKExternalJITDiagnosticsMemory(@"native-startup-entered");
     }
     UIApplication.sharedApplication.idleTimerDisabled = YES;
+    [self seedGuestDisplayFromScene];
     NSString *logPath = TKDocumentsPath(@"native-guest.log");
     TKKeepEarlierLogs();
     FILE *log = fopen(logPath.fileSystemRepresentation, "w");
@@ -2014,7 +2075,8 @@ static void TKScheduleSnapshots(NSArray<NSString *> *arguments, FILE *log) {
             [self refuseNativeGame:@"--signed-image is a Local signing container, but --local-game-startup always uses Developer service. Pass only one of them."];
             return;
         }
-        [self launchLocalApp:[self appFromArguments]];return;
+        TKApp *app=[self appFromArguments];
+        [self whenSceneIsLandscape:^{ [self launchLocalApp:app]; }];return;
     }
 #endif
     if ([arguments containsObject:@"--native-initializer"] || [arguments containsObject:@"--native-startup"]) {

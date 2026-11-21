@@ -657,7 +657,8 @@ static void AKFixtureInputSource(void *context) {
     {
         NSMutableDictionary *modes = [[NSUserDefaults.standardUserDefaults volatileDomainForName:NSArgumentDomain] mutableCopy];
         modes[@"AKChatDeliveryMode"] = composerTestArgument ? @"review" : @"classicDirect";
-        if (mobileInterface) modes[@"WolkaraForeverInterfaceModeV1"] = @"ios";
+        // Named either way: a phone with no stored choice resolves to its own layout, not Standard.
+        modes[@"WolkaraForeverInterfaceModeV1"] = mobileInterface ? @"ios" : @"ipados";
         [NSUserDefaults.standardUserDefaults setVolatileDomain:modes forName:NSArgumentDomain];
     }
     if ([NSProcessInfo.processInfo.arguments containsObject:@"--tracking-progress-test"]) {

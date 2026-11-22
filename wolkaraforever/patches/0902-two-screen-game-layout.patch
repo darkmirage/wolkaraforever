@@ -1,0 +1,40 @@
+# WolkaraForever layer patch 0902 - two screens: the game on top, the controls below
+#
+# Why: an unfolded iPhone Duo held upright (flat, or half-closed like a handheld) has two
+# landscape-shaped screens. The game takes the top one; the on-screen controller, the toolbar
+# and the performance HUD take the bottom one, switching live as the phone turns. The host view
+# keeps the landscape size the game started with and is scaled into the top screen
+# (wolkaraforever/Touch/TwoScreenLayout.m), so turning the phone never resizes the game, whose
+# drawable would otherwise stretch (patch 0046).
+#
+# Applies to: translation/AppKit/AppKit.m
+# Upstream: no - personal feature, carried on raven/integration only.
+#
+diff --git a/translation/AppKit/AppKit.m b/translation/AppKit/AppKit.m
+--- a/translation/AppKit/AppKit.m
++++ b/translation/AppKit/AppKit.m
+@@ -5,6 +5,7 @@
+ #import "TouchControls.h"
+ #import "AKTouchEventPump.h"
+ #import "TouchGamepadLayout.h"
++#import "TwoScreenLayout.h"
+ 
+ // The guest screen's pixels per point, defined in Screens.m.
+ CGFloat AKGuestBackingScale(void);
+@@ -492,9 +493,14 @@
+     ]];
+     [self touchTrackpadChanged:_touchControls.trackpadEnabled];
+ }
+-// Called by the container (or, without one, by this view itself): the game fills it.
++// Called by the container (or, without one, by this view itself): the game fills it, or on an
++// unfolded phone held upright takes the top screen and leaves the bottom one to the controls.
++// The HUD goes with them, drawn there at its own size rather than scaled with the game.
+ - (void)layoutTouchControlsIn:(UIView *)parent {
+-    if (parent != self && !CGRectEqualToRect(self.frame, parent.bounds)) self.frame = parent.bounds;
++    if (parent == self) return;
++    [_touchControls useLowerScreen:AKLayoutGameView(self, parent) ofView:parent];
++    UIView *hud = _touchControls.lowerScreenView ?: self;
++    if (_performanceOverlay.superview != hud) { [hud addSubview:_performanceOverlay]; [_performanceOverlay setNeedsLayout]; }
+ }
+ - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+     UIView *target=[super hitTest:point withEvent:event];

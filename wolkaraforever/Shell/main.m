@@ -1106,11 +1106,17 @@ static NSString *AKAudioStateDescription(void) {
 // launcher on a phone may be upright, or in one panel of an unfolded phone held sideways. A start
 // that skips the Play button (TKWoWViewController turns the scene there) waits here until the
 // scene is wider than tall, or two seconds.
+// An unfolded phone held upright is the exception: the game keeps a sideways surface on the top
+// screen there (TwoScreenLayout.m), so it starts at once.
 - (void)whenSceneIsLandscape:(dispatch_block_t)start {
     UIWindowScene *scene=self.window.windowScene;
     if (UIDevice.currentDevice.userInterfaceIdiom!=UIUserInterfaceIdiomPhone || !scene) { start(); return; }
     CGSize size=scene.coordinateSpace.bounds.size;
     if (UIInterfaceOrientationIsLandscape(scene.effectiveGeometry.interfaceOrientation) && size.width>size.height) { start(); return; }
+    if (WKSceneHasTwoScreens(size)) {
+        WKLog("ui", @"start: unfolded and upright (%.0fx%.0f); the game takes the top screen", size.width, size.height);
+        start(); return;
+    }
     WKLog("ui", @"start: turning the scene sideways before the game starts (%.0fx%.0f, orientation %ld)",
           size.width, size.height, (long)scene.effectiveGeometry.interfaceOrientation);
     [self.window.rootViewController setNeedsUpdateOfSupportedInterfaceOrientations];
@@ -1559,9 +1565,13 @@ static void TKScheduleSnapshots(NSArray<NSString *> *arguments, FILE *log) {
     void *support=dlopen(path.fileSystemRepresentation,RTLD_NOW|RTLD_GLOBAL);
     void (*publish)(CGSize,double)=support ? (void (*)(CGSize,double))dlsym(support,"AKSetGuestDisplayGeometry") : NULL;
     if (!publish) { const char *why=dlerror(); WKLog("ui", @"start: the guest display was not seeded: %s", why?:"no support library"); return; }
-    CGSize size=scene.coordinateSpace.bounds.size, screen=UIScreen.mainScreen.bounds.size;
+    // Sideways whichever way the scene is held: the game's window on a phone is landscape, and
+    // upright on two screens it is the sideways surface scaled into the top one.
+    CGSize sceneSize=scene.coordinateSpace.bounds.size, screen=UIScreen.mainScreen.bounds.size;
+    CGSize size=CGSizeMake(MAX(sceneSize.width,sceneSize.height),MIN(sceneSize.width,sceneSize.height));
     publish(size,scene.screen.maximumFramesPerSecond);
-    WKLog("ui", @"start: guest display %.0fx%.0f from the scene (UIScreen %.0fx%.0f)",size.width,size.height,screen.width,screen.height);
+    WKLog("ui", @"start: guest display %.0fx%.0f from the %.0fx%.0f scene (UIScreen %.0fx%.0f)",size.width,size.height,
+          sceneSize.width,sceneSize.height,screen.width,screen.height);
 }
 - (void)runNativeGame:(BOOL)fullStartup app:(TKApp *)app container:(NSString *)container {
     if (!self.cloudPrepared && [TKSteamCloudCoordinator configuredProfile:app.profile documents:TKDocumentsPath(@"") configuration:app.steamCloud]) {

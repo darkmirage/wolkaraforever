@@ -4,6 +4,7 @@
 #import "../translation/AppKit/InterfaceMode.h"
 #import "../translation/AppKit/TouchGamepad.h"
 #import "../translation/AppKit/TouchGamepadLayout.h"
+#import "../translation/AppKit/TwoScreenLayout.h"
 #import "../translation/AppKit/TouchCameraGesture.h"
 #import "../translation/AppKit/ControllerPointer.h"
 #import "../translation/AppKit/TouchControllerLog.h"
@@ -1403,6 +1404,79 @@ static void TestTrackingPump(void) {
     puts("TOUCH_TRACKING_PUMP_PASS: deferred UI and tracking timers progress; closed-panel pump remains nonblocking.");
 }
 
+// An unfolded Duo held upright: the game keeps its landscape size scaled into the top screen and the
+// controller moves to the bottom one; sideways, or on a tablet, the game fills the scene again.
+static BOOL Near(CGFloat a, CGFloat b) { return fabs(a-b)<0.01; }
+static void TestTwoScreens(UIView *host) {
+    CGRect top, bottom;
+    assert(AKTwoScreenRects(CGSizeMake(669,951),UIEdgeInsetsZero,&top,&bottom));
+    assert(CGRectEqualToRect(top,CGRectMake(0,0,669,466)) && CGRectEqualToRect(bottom,CGRectMake(0,485,669,466)));
+    assert(AKTwoScreenRects(CGSizeMake(669,951),UIEdgeInsetsMake(30,0,20,0),&top,&bottom));
+    assert(CGRectEqualToRect(top,CGRectMake(0,30,669,436)) && CGRectEqualToRect(bottom,CGRectMake(0,485,669,466)));
+    assert(!AKTwoScreenRects(CGSizeMake(951,669),UIEdgeInsetsZero,&top,&bottom));
+    assert(!AKTwoScreenRects(CGSizeMake(466,678),UIEdgeInsetsZero,&top,&bottom));
+
+    BOOL phone=UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPhone;
+    UIView *container=[[UIView alloc] initWithFrame:CGRectMake(0,0,951,669)];
+    UIView *game=[UIView new]; [container addSubview:game];
+    assert(CGRectIsNull(AKLayoutGameView(game,container)));
+    assert(CGAffineTransformIsIdentity(game.transform) && CGRectEqualToRect(game.frame,container.bounds));
+    container.bounds=CGRectMake(0,0,669,951);
+    CGRect lower=AKLayoutGameView(game,container);
+    if (phone) {
+        assert(CGRectEqualToRect(lower,CGRectMake(0,485,669,466)));
+        assert(CGSizeEqualToSize(game.bounds.size,CGSizeMake(951,669)));
+        assert(Near(game.transform.a,466.0/669) && Near(game.transform.d,466.0/669));
+        assert(Near(game.center.x,334.5) && Near(game.center.y,233));
+        assert(CGRectGetMaxY(game.frame)<=466.01 && CGRectGetMinX(game.frame)>=-0.01 && CGRectGetMaxX(game.frame)<=669.01);
+        container.bounds=CGRectMake(0,0,466,678);
+        assert(CGRectIsNull(AKLayoutGameView(game,container)));
+        assert(CGSizeEqualToSize(game.bounds.size,CGSizeMake(678,466)) && Near(game.transform.a,466.0/678));
+    } else {
+        assert(CGRectIsNull(lower) && CGRectEqualToRect(game.frame,container.bounds));
+    }
+    container.bounds=CGRectMake(0,0,951,669);
+    assert(CGRectIsNull(AKLayoutGameView(game,container)));
+    assert(CGAffineTransformIsIdentity(game.transform) && CGRectEqualToRect(game.frame,container.bounds));
+
+    UIView *lowerScreen=[[UIView alloc] initWithFrame:CGRectMake(0,0,669,951)];
+    AKTouchGamepad *pad=[[AKTouchGamepad alloc] initWithHostView:host];
+    UIView *overlay=nil;
+    for (UIView *view in host.subviews) if ([NSStringFromClass(view.class) isEqualToString:@"AKGamepadOverlay"]) overlay=view;
+    assert(overlay && CGRectEqualToRect(overlay.frame,host.bounds));
+    [pad placeOverlayInView:lowerScreen frame:CGRectMake(0,485,669,466)];
+    assert(overlay.superview==lowerScreen && CGRectEqualToRect(overlay.frame,CGRectMake(0,485,669,466)));
+    [pad placeOverlayInView:nil frame:CGRectNull];
+    assert(overlay.superview==host && CGRectEqualToRect(overlay.frame,host.bounds));
+    [pad invalidate]; [overlay removeFromSuperview];
+
+    // The lower screen keeps its own control positions; one never moved there follows sideways.
+    NSString *suite=[@"org.tolkara.two-screens-test." stringByAppendingString:NSUUID.UUID.UUIDString];
+    NSUserDefaults *defaults=[[NSUserDefaults alloc] initWithSuiteName:suite];
+    AKGamepadLayout *layout=[[AKGamepadLayout alloc] initWithDefaults:defaults];
+    CGRect sideways=CGRectMake(0,0,951,669), below=CGRectMake(0,0,669,466), item=CGRectMake(0,0,100,100);
+    [layout moveItem:@"menu" toFrame:CGRectMake(851,0,100,100) inBounds:sideways];
+    [layout moveItem:@"left" toFrame:CGRectMake(0,569,100,100) inBounds:sideways];
+    layout.twoScreens=YES;
+    assert(CGRectEqualToRect([layout frameForItem:@"menu" defaultFrame:item inBounds:below],CGRectMake(569,0,100,100)));
+    [layout moveItem:@"menu" toFrame:CGRectMake(0,0,100,100) inBounds:below];
+    [layout save];
+    layout=[[AKGamepadLayout alloc] initWithDefaults:defaults];
+    assert(CGRectEqualToRect([layout frameForItem:@"menu" defaultFrame:item inBounds:sideways],CGRectMake(851,0,100,100)));
+    layout.twoScreens=YES;
+    assert(CGRectEqualToRect([layout frameForItem:@"menu" defaultFrame:item inBounds:below],CGRectMake(0,0,100,100)));
+    assert(CGRectEqualToRect([layout frameForItem:@"left" defaultFrame:item inBounds:below],CGRectMake(0,366,100,100)));
+    NSDictionary *kept=layout.arrangement;
+    [layout applyArrangement:@{@"positions":@{@"menu":@[@1,@1]}}];
+    assert(CGRectEqualToRect([layout frameForItem:@"menu" defaultFrame:item inBounds:below],CGRectMake(569,366,100,100)));
+    [layout applyArrangement:kept];
+    assert(CGRectEqualToRect([layout frameForItem:@"menu" defaultFrame:item inBounds:below],CGRectMake(0,0,100,100)));
+    [layout reset];
+    assert(CGRectEqualToRect([layout frameForItem:@"menu" defaultFrame:item inBounds:below],item));
+    [defaults removePersistentDomainForName:suite];
+    puts("TOUCH_TWO_SCREENS_PASS: upright and unfolded, the game keeps its landscape size on the top screen and the controller takes the bottom one.");
+}
+
 static void TestLifecycle(UIView *host) {
     TestTrackingPump();
     TestStickMapping();
@@ -1415,6 +1489,7 @@ static void TestLifecycle(UIView *host) {
     TestLayoutSchema();
     TestDirectCamera();
     TestControllerPointer();
+    TestTwoScreens(host);
     AKFixtureGamepad *pad=[[AKFixtureGamepad alloc] initWithHostView:host];
     // The fixture asserts the controller lifecycle, not the device's foreground phase.
     // A simulator launched by simctl reports the app Inactive, which would gate every

@@ -19,5 +19,8 @@ CGPoint AKTouchGamepadStickPosition(CGPoint point, CGSize size);
 // arrangement, the zones and the elements have to be what the dictionary now says.
 - (void)reloadLayout;
 - (void)invalidate;
+// Two screens (TwoScreenLayout.m): the controller is drawn on the lower screen of `view`, outside
+// the game's scaled view. Nil puts it back over the game.
+- (void)placeOverlayInView:(nullable UIView *)view frame:(CGRect)frame;
 @end
 NS_ASSUME_NONNULL_END

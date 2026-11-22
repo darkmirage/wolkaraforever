@@ -3,6 +3,11 @@
 #import "../App/ExecutionMode.h"
 
 NS_ASSUME_NONNULL_BEGIN
+
+// A scene this size is an unfolded iPhone Duo held upright: the game starts there without being
+// turned sideways, and takes the top screen. The same rule as AKTwoScreenRects in the game's
+// adapter (wolkaraforever/Touch/TwoScreenLayout.m), which the launcher does not link.
+FOUNDATION_EXPORT BOOL WKSceneHasTwoScreens(CGSize scene);
 @class TKLaunchProgressView;
 @interface TKWoWViewController : UIViewController
 - (instancetype)initWithLibrary:(TKAppLibrary *)library;

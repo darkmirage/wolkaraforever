@@ -96,6 +96,10 @@ typedef NS_ENUM(NSInteger, AKGamepadLayoutMode) {
 - (BOOL)saveAsProfileNamed:(NSString *)name;
 - (BOOL)applyProfileNamed:(NSString *)name;
 - (BOOL)deleteProfileNamed:(NSString *)name;
+// The controls are on the lower screen of an unfolded phone held upright. That screen is a
+// different shape from the sideways one, so it keeps positions of its own: a control moved
+// there stays put sideways, and one never moved there sits where the sideways layout has it.
+@property(nonatomic) BOOL twoScreens;
 - (CGRect)frameForItem:(NSString *)item defaultFrame:(CGRect)frame inBounds:(CGRect)bounds;
 - (void)moveItem:(NSString *)item toFrame:(CGRect)frame inBounds:(CGRect)bounds;
 - (void)save;

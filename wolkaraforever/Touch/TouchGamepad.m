@@ -263,6 +263,7 @@ static const CGFloat AKAutoRunArm = 60;
 @property(nonatomic, readonly) AKGamepadStick *rightStick;
 @property(nonatomic, readonly) AKGamepadLayout *preferences;
 @property(nonatomic) BOOL controlsVisible;
+@property(nonatomic) BOOL twoScreens;
 @property(nonatomic, readonly) BOOL configuring;
 @property(nonatomic, readonly) BOOL editing;
 @property(nonatomic, copy) void (^configurationChanged)(void);
@@ -661,12 +662,19 @@ static const CGFloat AKFloatRightMinX = 0.64, AKFloatRightMinY = 0.25, AKFloatRi
 }
 - (void)reloadLayout {
     _preferences = [[AKGamepadLayout alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
+    _preferences.twoScreens = _twoScreens;
     [self releaseStickButton:@"layout"];
     [self syncAbilityZones];
     [self updateAppearance];
     [self setNeedsLayout];
 }
 - (void)setControlsVisible:(BOOL)visible { _controlsVisible = visible; [self updateAppearance]; }
+- (void)setTwoScreens:(BOOL)twoScreens {
+    if (_twoScreens == twoScreens) return;
+    _twoScreens = twoScreens;
+    _preferences.twoScreens = twoScreens;
+    [self setNeedsLayout];
+}
 - (void)updateAppearance {
     self.hidden = !_controlsVisible && !self.configuring;
     for (UIView *item in _items.allValues) {
@@ -1316,6 +1324,25 @@ static const CGFloat AKJumpReachOuter = 146, AKJumpReachInner = 50, AKJumpReachA
 }
 - (NSArray<GCController *> *)connectedControllers { return GCController.controllers; }
 - (AKTouchHaptics *)makeHaptics { return [AKTouchHaptics new]; }
+- (void)placeOverlayInView:(UIView *)view frame:(CGRect)frame {
+    UIView *host = _host;
+    UIView *parent = view ?: host;
+    if (!parent) return;
+    if (_overlay.superview != parent) {
+        [_overlay releaseTransientInput:@"moved"];
+        // On the lower screen the toolbar and the performance HUD share its view, and are reached
+        // before the controls; over the game the overlay stays on top, as it always has.
+        if (view) [parent insertSubview:_overlay atIndex:0]; else [parent addSubview:_overlay];
+    }
+    _overlay.twoScreens = view != nil;
+    if (view) {
+        _overlay.autoresizingMask = UIViewAutoresizingNone;
+        if (!CGRectEqualToRect(_overlay.frame, frame)) _overlay.frame = frame;
+    } else {
+        _overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
+        if (!CGRectEqualToRect(_overlay.frame, host.bounds)) _overlay.frame = host.bounds;
+    }
+}
 - (void)updateHaptics { _haptics.enabled = _visible && !_overlay.configuring && _overlay.preferences.hapticsEnabled; }
 - (GCVirtualController *)makeController {
     GCVirtualControllerConfiguration *configuration = [GCVirtualControllerConfiguration new];

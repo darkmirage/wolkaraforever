@@ -156,4 +156,13 @@ extern NSString *const AKChatComposerOutcomeKey;                        // "outc
 // Open the Composer from one of this library's own controls. A mapped button arrives as the
 // notification above and lands here too, so every entry path is one method.
 - (void)openChatComposerFromSource:(AKChatComposerSource)source;
+
+// Two screens (TwoScreenLayout.m): the game's view is scaled into the top screen and `rect`, in
+// `view`, is the bottom one, which the controller takes. CGRectNull puts it back over the game.
+- (void)useLowerScreen:(CGRect)rect ofView:(UIView *)view;
+// The view the lower screen's controls are in while there are two screens, and nil otherwise:
+// the toolbar, its Composer and the controller move there, and the host puts its HUD there too.
+@property(nonatomic, readonly) UIView *lowerScreenView;
+// The game's view: where the trackpad's touches land, whichever screen the toolbar is on.
+@property(nonatomic, readonly) UIView *gameHost;
 @end

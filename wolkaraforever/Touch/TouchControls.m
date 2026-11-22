@@ -615,6 +615,11 @@ static NSString *AKKeyAccessibilityNameKey(NSString *title) {
     UIButton *_toolbarHandle;
     BOOL _toolbarCollapsed, _mobileInterface;
     NSTimer *_toolbarCollapseTimer;
+    CGRect _lowerScreen;
+    // The lower screen, while there are two: the controller, this toolbar and its Composer move
+    // into it. The game's view stays where the trackpad's touches are read.
+    UIView *_lowerPanel;
+    __weak UIView *_gameHost;
     UIButton *_insertDraftButton, *_clearDraftButton;
     UIButton *_speechLanguageButton;
     UILabel *_composerLabel;
@@ -696,6 +701,7 @@ static void AKEmitTouch(void *context, AKLayerTrackpadAction action, double x, d
 
 - (instancetype)initWithFrame:(CGRect)frame {
     if ((self = [super initWithFrame:frame])) {
+        _lowerScreen = CGRectNull;
         self.layer.zPosition = 100001;
         // VoiceOver reads what is under this view in the app's language, not the iPad's, so a
         // German HUD and German keyboard keys are pronounced as German.
@@ -905,9 +911,16 @@ static void AKEmitTouch(void *context, AKLayerTrackpadAction action, double x, d
     else if (_toolbarCollapsed) { width = 96; height = 34; }
     else { width = 304; height = 44; }
     CGRect bounds = host.bounds;
-    CGFloat y = (!_mobileInterface || self.keyboardVisible) ? host.safeAreaInsets.top + 8
-        : bounds.size.height - host.safeAreaInsets.bottom - 8 - height;
-    self.frame = CGRectMake(floor((bounds.size.width - width) / 2), y, width, height);
+    // On two screens the game's view is scaled into the top screen; the toolbar is drawn at its own
+    // size there all the same, so it is scaled back up by as much.
+    CGFloat scale = host.transform.a > 0 ? host.transform.a : 1;
+    CGFloat margin = 8 / scale, drawn = height / scale;
+    CGFloat y = (!_mobileInterface || self.keyboardVisible) ? host.safeAreaInsets.top + margin
+        : bounds.size.height - host.safeAreaInsets.bottom - margin - drawn;
+    CGAffineTransform transform = CGAffineTransformMakeScale(1 / scale, 1 / scale);
+    if (!CGAffineTransformEqualToTransform(self.transform, transform)) self.transform = transform;
+    self.bounds = CGRectMake(0, 0, width, height);
+    self.center = CGPointMake(CGRectGetMidX(bounds), y + drawn / 2);
     if (logged < 3) {
         logged++;
         AKLog(@"toolbar host bounds=%.0fx%.0f insets top=%.0f left=%.0f bottom=%.0f placed x=%.0f y=%.0f centre=%.0f (screen centre %.0f)",
@@ -921,7 +934,7 @@ static void AKEmitTouch(void *context, AKLayerTrackpadAction action, double x, d
     [super layoutSubviews];
     // A rotation or a resize changes the space the remembered centroid was measured in, so the
     // gesture is closed rather than dragged by a delta that belongs to a different screen.
-    CGSize surface = self.superview.bounds.size;
+    CGSize surface = self.gameHost.bounds.size;
     if (!CGSizeEqualToSize(surface, _cameraSurface)) {
         if (AKTouchCameraIsActive(&_camera)) [self cancelCameraGesture:@"resize"];
         _cameraSurface = surface;
@@ -1143,7 +1156,7 @@ static const NSTimeInterval AKSystemKeyboardWait = 0.8, AKSystemKeyboardLateWait
     if (_ownKeyboard) { _ownKeyboard = NO; _keyboardInput.inputView = nil; [_keyboardInput reloadInputViews]; }
     if (self.keyboardVisible) {
         [self resignFirstResponder];
-        [self.superview becomeFirstResponder];
+        [self.gameHost becomeFirstResponder];
     }
 }
 // The guest owns its text/selection. Explicit Replace replaces the field.
@@ -2133,6 +2146,7 @@ static const unsigned short AKKeyF12 = 111;
     [_composer removeFromSuperview];
     UIView *host = self.superview;
     if (!host) return;
+    if (host != _lowerPanel) _gameHost = host;
     [host addSubview:_composer];
     // The editor follows the keyboard; the toolbar stays fixed at the top.
     // No resizing of the game's rendering surface or reading of game memory.
@@ -2149,7 +2163,7 @@ static const unsigned short AKKeyF12 = 111;
     // not set translatesAutoresizingMaskIntoConstraints on itself; frame placement from
     // the host's bounds is the one thing neither can argue with.
     if (!_gamepad) {
-        _gamepad = [[AKTouchGamepad alloc] initWithHostView:host];
+        _gamepad = [[AKTouchGamepad alloc] initWithHostView:self.gameHost];
         __weak AKTouchControls *weakSelf = self;
         _gamepad.visibilityChanged = ^(BOOL visible) {
             AKTouchControls *controls = weakSelf;
@@ -2158,11 +2172,37 @@ static const unsigned short AKKeyF12 = 111;
             [controls setGamepadVisible:visible];
         };
         _gamepad.enabled = _gamepadEnabled;
+        if (_lowerPanel.superview) [_gamepad placeOverlayInView:_lowerPanel frame:_lowerPanel.bounds];
     }
     _gamepad.keyboardVisible = self.keyboardVisible;
     [_gamepad refresh];
 }
 
+- (UIView *)gameHost { return _gameHost ?: self.superview; }
+- (UIView *)lowerScreenView { return _lowerPanel.superview ? _lowerPanel : nil; }
+- (void)useLowerScreen:(CGRect)rect ofView:(UIView *)view {
+    BOOL two = !CGRectIsNull(rect) && view;
+    if (two == !CGRectIsNull(_lowerScreen) && (!two || CGRectEqualToRect(rect, _lowerScreen))) return;
+    _lowerScreen = two ? rect : CGRectNull;
+    [self cancelTouches];
+    if (two) {
+        if (!_lowerPanel) {
+            _lowerPanel = [[UIView alloc] initWithFrame:rect];
+            _lowerPanel.clipsToBounds = YES;
+        }
+        if (_lowerPanel.superview != view) [view addSubview:_lowerPanel];
+        _lowerPanel.frame = rect;
+        [_gamepad placeOverlayInView:_lowerPanel frame:_lowerPanel.bounds];
+        if (self.superview != _lowerPanel) [_lowerPanel addSubview:self];
+    } else {
+        UIView *host = _gameHost;
+        if (host && self.superview != host) [host addSubview:self];
+        [_gamepad placeOverlayInView:nil frame:CGRectZero];
+        [_lowerPanel removeFromSuperview];
+    }
+    AKLog(@"two screens: toolbar %@", two ? @"on the lower screen" : @"over the game");
+    [self setNeedsLayout];
+}
 - (void)processTouches:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
     if (!self.trackpadEnabled) return;
     // Exactly the flow this file has always had: a cancelled touch cancels the gesture and the
@@ -2172,14 +2212,14 @@ static const unsigned short AKKeyF12 = 111;
     unsigned count = 0;
     CGPoint center = CGPointZero;
     for (UITouch *touch in event.allTouches) {
-        if (touch.type != UITouchTypeDirect || touch.view != self.superview ||
+        if (touch.type != UITouchTypeDirect || touch.view != self.gameHost ||
             touch.phase == UITouchPhaseEnded || touch.phase == UITouchPhaseCancelled) continue;
-        CGPoint point = [touch locationInView:self.superview];
+        CGPoint point = [touch locationInView:self.gameHost];
         center.x += point.x; center.y += point.y; count++;
     }
     if (count) { center.x /= count; center.y /= count; }
     AKTouchCameraGestureUpdate(&_camera, count, center.x, center.y, event.timestamp,
-                        self.superview.bounds.size, AKEmitTouch, (__bridge void *)self);
+                        self.gameHost.bounds.size, AKEmitTouch, (__bridge void *)self);
     [_holdTimer invalidate]; _holdTimer = nil;
     if (_camera.pad.fingers && !_camera.pad.blocked && !_camera.pad.lifting && !_camera.pad.dragging &&
         _camera.pad.travelled <= 8) {

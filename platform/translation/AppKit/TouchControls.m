@@ -1,24 +1,161 @@
 #import "TouchControls.h"
 #import "TouchTrackpad.h"
+#import "TouchCamera.h"
+#import "TouchStick.h"
+#import "AKSupport.h"
+#import <GameController/GameController.h>
 
 NSString *const AKTouchControlsDefaultsKey = @"AKTouchControls";
+NSString *const AKPointerAccelerationDefaultsKey = @"AKPointerAcceleration";
+NSString *const AKPointerSpeedDefaultsKey = @"AKPointerSpeed";
+BOOL AKPointerAccelerationEnabled(void) {
+    NSNumber *saved = [NSUserDefaults.standardUserDefaults objectForKey:AKPointerAccelerationDefaultsKey];
+    return ![saved isKindOfClass:NSNumber.class] || saved.boolValue;
+}
+double AKPointerSpeed(void) {
+    NSNumber *saved = [NSUserDefaults.standardUserDefaults objectForKey:AKPointerSpeedDefaultsKey];
+    double speed = [saved isKindOfClass:NSNumber.class] ? saved.doubleValue : 1;
+    return isfinite(speed) && speed >= 0.1 && speed <= 10 ? speed : 1;
+}
 static NSString *const AKTouchTrackpadDefaultsKey = @"AKTouchTrackpadEnabled";
+static NSString *const AKTouchStickDefaultsKey = @"AKTouchStickEnabled";
+// Camera or cursor mode, remembered for games whose profile asks for camera
+// mode (TOLKARA_TOUCH_MODE=camera); other games always use the trackpad.
+static NSString *const AKTouchCursorModeDefaultsKey = @"AKTouchCursorMode";
+
+// A column of `count` buttons on a grid of `rows`: 44 points on a 52-point
+// pitch, shrunk (to 34 on 40) for the rows to fit between top and bottom. Rows
+// that still do not fit run past the bottom, and the controls hide their
+// buttons. The Duo's columns start at the top. Elsewhere the grid stands in
+// the middle of the height and a column shorter than it stands at the grid's
+// bottom (lowest), or, the outer of two columns, at its top.
+static void AKTouchColumn(CGRect *frames, NSUInteger count, NSUInteger rows, CGFloat centre, CGFloat top, CGFloat bottom, BOOL middle, BOOL lowest) {
+    CGFloat height = bottom - top;
+    CGFloat pitch = MAX(40, MIN(52, floor((height + 6) / rows))), size = MIN(44, pitch - 6);
+    CGFloat spare = height - (pitch * (rows - 1) + size);
+    CGFloat x = floor(centre - size / 2), y = (middle && spare > 0 ? top + floor(spare / 2) : top) + (lowest ? (rows - count) * pitch : 0);
+    for (NSUInteger i = 0; i < count; i++) frames[i] = CGRectMake(x, y + i * pitch, size, size);
+}
+
+AKTouchLayout AKTouchLayoutFor(CGSize size, UIEdgeInsets safe, CGRect strip) {
+    AKTouchLayout layout;
+    memset(&layout, 0, sizeof layout);
+    layout.game = CGRectMake(0, 0, size.width, size.height);
+    BOOL duo = !CGRectIsNull(strip);
+    // The columns end 8 points above the home indicator's inset and start 8
+    // from the top, or 20 on a screen with side insets, whose rounded corners
+    // would cut a button nearer the top.
+    CGFloat top = duo ? strip.origin.y : safe.top + (safe.left > 0 || safe.right > 0 ? 20 : 8), bottom = size.height - safe.bottom - 8;
+    CGFloat width = duo ? strip.size.width : AKTouchControlsColumnWidth;
+    NSUInteger columns = duo || bottom - top + 6 >= AKTouchLeftButtons * 50 ? 1 : 2, outer = columns == 2 ? AKTouchOuterButtons : 0;
+    // What the game gives up at each edge. The Duo's strip is mirrored. Elsewhere
+    // the inner column stands past the side inset, where the Dynamic Island
+    // or a rounded corner may be, and an outer column in it or beside it.
+    CGFloat left = duo ? width : width + MAX(safe.left, (columns - 1) * width);
+    CGFloat right = duo ? width : width + MAX(safe.right, (columns - 1) * width);
+    if (size.width - left - right < 400) return layout;
+    layout.columns = columns;
+    layout.bottom = bottom;
+    layout.game = CGRectMake(left, 0, size.width - left - right, size.height);
+    CGRect *buttons = layout.buttons;
+    for (unsigned side = 0; side < 2; side++, buttons += AKTouchLeftButtons) {
+        NSUInteger count = (side ? AKTouchRightButtons : AKTouchLeftButtons) - outer;
+        // Both sides share one grid, as tall as the longer (left) side's inner
+        // column, so that their rows are level and Jump is as low as key 0.
+        // On the Duo each column has its own, as it always had.
+        NSUInteger rows = duo ? count : AKTouchLeftButtons - outer;
+        CGFloat inset = side ? right : left, inner = inset - width / 2, outside = inset - width * 3 / 2;
+        // The outer column's two buttons stand in the grid's top rows, above
+        // the Dynamic Island.
+        if (outer) AKTouchColumn(buttons, outer, rows, side ? size.width - outside : outside, top, bottom, YES, NO);
+        AKTouchColumn(buttons + outer, count, rows, side ? size.width - inner : inner, top, bottom, !duo, !duo);
+    }
+    return layout;
+}
 
 @implementation AKTouchControls {
-    UIButton *_keyboardButton, *_trackpadButton;
-    UIView *_accessory;
+    NSArray<UIButton *> *_columnButtons;   // in AKTouchLayout's order
+    UIButton *_keyboardButton, *_trackpadButton, *_stickButton, *_jumpButton, *_escapeButton, *_tabButton, *_shiftButton;
+    BOOL _shiftHeld;
+    NSArray<UIButton *> *_quickButtons;
+    unsigned _quickHeld;   // bit i: the key of the held button tagged i is down
+    UIView *_accessory, *_stickBase, *_stickKnob;
     NSTimer *_holdTimer;
     AKTrackpad _pad;
+    BOOL _linearPointer;
+    AKTouchCamera _camera;
+    BOOL _cameraProfile;   // the profile asks for camera mode: the hand button switches modes
+    AKStick _stick;
+    // UIKit keeps a touch's object for its lifetime. The stick's touch, and
+    // left-half touches that arrive while it is held, never reach the trackpad.
+    __weak UITouch *_stickTouch;
+    NSHashTable<UITouch *> *_ignoredTouches;
+    // A click lasts long enough for a game that polls the buttons once a
+    // frame: a release sooner than that after its press waits here.
+    NSTimeInterval _pressedAt[3];
+    NSTimer *_release[3];
+    // What iOS reported for the gesture in progress, for the log: sizes and
+    // times only (when the first movement came and how large its steps were).
+    struct { BOOL active; NSTimeInterval began, firstMove, last; CGPoint origin, previous; double reach, steps[6]; unsigned count, peak; } _trace;
+    unsigned _traceReports;
+}
+
+static const NSTimeInterval AKTouchClickTime = 0.06;
+- (void)flushReleases {
+    for (unsigned button = 0; button < 3; button++) {
+        if (!_release[button]) continue;
+        [_release[button] invalidate]; _release[button] = nil;
+        [self.delegate touchButton:button pressed:NO];
+    }
+}
+- (void)button:(unsigned)button pressed:(BOOL)pressed {
+    if (button > 2) return;
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime, held = now - _pressedAt[button];
+    if (pressed || held >= AKTouchClickTime) {
+        [self flushReleases];
+        if (pressed) _pressedAt[button] = now;
+        [self.delegate touchButton:button pressed:pressed];
+        return;
+    }
+    if (_release[button]) return;
+    __weak AKTouchControls *weakSelf = self;
+    _release[button] = [NSTimer timerWithTimeInterval:AKTouchClickTime - held repeats:NO block:^(NSTimer *timer) {
+        (void)timer;
+        AKTouchControls *controls = weakSelf;
+        if (!controls || !controls->_release[button]) return;
+        controls->_release[button] = nil;
+        [controls.delegate touchButton:button pressed:NO];
+    }];
+    [NSRunLoop.mainRunLoop addTimer:_release[button] forMode:NSRunLoopCommonModes];
 }
 
 static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double y, unsigned button) {
     AKTouchControls *controls = (__bridge AKTouchControls *)context;
     switch (action) {
-        case AKTrackpadMove: [controls.delegate touchMoveBy:CGPointMake(x, y)]; break;
-        case AKTrackpadScroll: [controls.delegate touchScrollBy:CGPointMake(x, y)]; break;
-        case AKTrackpadDown: [controls.delegate touchButton:button pressed:YES]; break;
-        case AKTrackpadUp: [controls.delegate touchButton:button pressed:NO]; break;
+        // A click still waiting for its release ends before the pointer moves on.
+        case AKTrackpadMove: [controls flushReleases]; [controls.delegate touchMoveBy:CGPointMake(x, y)]; break;
+        case AKTrackpadScroll: [controls flushReleases]; [controls.delegate touchScrollBy:CGPointMake(x, y)]; break;
+        case AKTrackpadDown: [controls button:button pressed:YES]; break;
+        case AKTrackpadUp: [controls button:button pressed:NO]; break;
+        case AKTrackpadPoint: [controls flushReleases]; [controls.delegate touchPointAt:CGPointMake(x, y)]; break;
     }
+}
+
+// macOS key codes and characters of a US keyboard's W, A, S and D.
+static void AKEmitStick(void *context, unsigned direction, bool pressed) {
+    AKTouchControls *controls = (__bridge AKTouchControls *)context;
+    unsigned short code = direction == AKStickUp ? 13 : direction == AKStickLeft ? 0 : direction == AKStickDown ? 1 : 2;
+    NSString *characters = direction == AKStickUp ? @"w" : direction == AKStickLeft ? @"a" : direction == AKStickDown ? @"s" : @"d";
+    [controls.delegate touchKey:code characters:characters pressed:pressed];
+}
+
+// Buttons that hold a key while touched, by tag: macOS key codes of a US
+// keyboard's 1 to 9 and 0, then Space (Jump), Escape and Tab.
+static const unsigned short AKQuickKeyCodes[] = {18, 19, 20, 21, 23, 22, 26, 28, 25, 29, 49, 53, 48};
+enum { AKJumpTag = 10, AKEscapeTag, AKTabTag, AKShiftTag };
+static NSString *AKQuickKeyCharacters(NSInteger index) {
+    if (index >= AKJumpTag) return @[@" ", @"\x1b", @"\t"][index - AKJumpTag];
+    return [NSString stringWithFormat:@"%ld", (long)(index + 1) % 10];
 }
 
 + (BOOL)enabled {
@@ -41,14 +178,28 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
     return button;
 }
 
+- (UIButton *)heldKeyButtonWithSymbol:(NSString *)symbol label:(NSString *)label tag:(NSInteger)tag {
+    UIButton *button = [self buttonWithSymbol:symbol label:label action:@selector(quickKeyUp:)];
+    button.tag = tag;
+    [button addTarget:self action:@selector(quickKeyDown:) forControlEvents:UIControlEventTouchDown];
+    [button addTarget:self action:@selector(quickKeyUp:) forControlEvents:UIControlEventTouchUpOutside | UIControlEventTouchCancel];
+    return button;
+}
+
 - (instancetype)initWithFrame:(CGRect)frame {
     if ((self = [super initWithFrame:frame])) {
         self.layer.zPosition = 100001;
+        _ignoredTouches = [NSHashTable weakObjectsHashTable];
+        _stickButton = [self buttonWithSymbol:@"dpad" label:@"Enable movement stick" action:@selector(toggleStick)];
+        _stickButton.accessibilityIdentifier = @"tolkara.stick";
+        _stickButton.accessibilityHint = @"A touch on the left half becomes a stick for W, A, S and D; the right half is the trackpad.";
         _keyboardButton = [self buttonWithSymbol:@"keyboard" label:@"Show keyboard" action:@selector(toggleKeyboard)];
         _keyboardButton.accessibilityIdentifier = @"tolkara.keyboard";
+        const char *mode = getenv("TOLKARA_TOUCH_MODE");
+        _cameraProfile = mode && !strcmp(mode, "camera");
         _trackpadButton = [self buttonWithSymbol:@"hand.draw" label:@"Enable touch trackpad" action:@selector(toggleTrackpad)];
         _trackpadButton.accessibilityIdentifier = @"tolkara.trackpad";
-        _trackpadButton.accessibilityHint = @"One finger moves; tap to click. Two fingers scroll or tap for right click. Three fingers tap for middle click. Hold then slide to drag. Long-press this button for mouse buttons.";
+        _trackpadButton.accessibilityHint = @"One finger moves the pointer; tap to click. Double-tap and hold for the right button, or with Shift held for a left drag. Hold one finger or tap two for right click. Two fingers scroll. Three fingers tap for middle click. Long-press this button for mouse buttons.";
         __weak AKTouchControls *weakSelf = self;
         NSMutableArray<UIAction *> *actions = [NSMutableArray new];
         NSArray<NSString *> *buttons = @[@"Left click", @"Right click", @"Middle click"];
@@ -62,35 +213,182 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
             }]];
         }
         _trackpadButton.menu = [UIMenu menuWithTitle:@"Mouse buttons" children:actions];
+        _stickButton.tag = _keyboardButton.tag = _trackpadButton.tag = -1;   // not key buttons
+        // Keys 1 to 9 and 0 (a game's action slots), held while touched. Shown
+        // only in the column layouts, which have room for them.
+        NSMutableArray<UIButton *> *quick = [NSMutableArray new];
+        for (NSInteger i = 0; i < 10; i++) {
+            NSString *key = AKQuickKeyCharacters(i);
+            UIButton *button = [self heldKeyButtonWithSymbol:[key stringByAppendingString:@".circle"]
+                                                       label:[@"Key " stringByAppendingString:key] tag:i];
+            button.hidden = YES;
+            button.accessibilityIdentifier = [@"tolkara.key" stringByAppendingString:key];
+            [quick addObject:button];
+        }
+        _quickButtons = quick;
+        _jumpButton = [self heldKeyButtonWithSymbol:@"arrow.up" label:@"Jump" tag:AKJumpTag];
+        _jumpButton.accessibilityIdentifier = @"tolkara.jump";
+        _jumpButton.accessibilityHint = @"Holds Space while touched.";
+        // Escape and Tab (e.g. to select a target), in the column layout only.
+        _escapeButton = [self heldKeyButtonWithSymbol:@"escape" label:@"Escape" tag:AKEscapeTag];
+        _escapeButton.accessibilityIdentifier = @"tolkara.escape";
+        _tabButton = [self heldKeyButtonWithSymbol:@"arrow.right.to.line" label:@"Tab" tag:AKTabTag];
+        _tabButton.accessibilityIdentifier = @"tolkara.tab";
+        // Shift, held while touched. While it is held the touch drag uses the
+        // left button (double tap and slide on the trackpad, a slide in camera
+        // mode): Shift and drag moves a spell on a locked bar. Column layout only.
+        _shiftButton = [self heldKeyButtonWithSymbol:@"shift" label:@"Shift" tag:AKShiftTag];
+        _shiftButton.accessibilityIdentifier = @"tolkara.shift";
+        _shiftButton.accessibilityHint = @"Holds Shift while touched.";
+        _escapeButton.hidden = _tabButton.hidden = _shiftButton.hidden = YES;
+        NSMutableArray<UIButton *> *columns = [NSMutableArray arrayWithObjects:_keyboardButton, _stickButton, _trackpadButton, _shiftButton, nil];
+        [columns addObjectsFromArray:[quick subarrayWithRange:NSMakeRange(5, 5)]];
+        [columns addObjectsFromArray:@[_escapeButton, _tabButton]];
+        [columns addObjectsFromArray:[quick subarrayWithRange:NSMakeRange(0, 5)]];
+        [columns addObject:_jumpButton];
+        _columnButtons = columns;
+        _linearPointer = !AKPointerAccelerationEnabled();
         NSNumber *saved = [NSUserDefaults.standardUserDefaults objectForKey:AKTouchTrackpadDefaultsKey];
-        self.trackpadEnabled = saved ? saved.boolValue : UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPhone;
+        BOOL phone = UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPhone;
+        // Camera mode needs the controls to take touches; it starts in camera
+        // mode unless cursor mode was chosen last time.
+        _cursorMode = !_cameraProfile || [NSUserDefaults.standardUserDefaults boolForKey:AKTouchCursorModeDefaultsKey];
+        self.trackpadEnabled = _cameraProfile || (saved ? saved.boolValue : phone);
+        NSNumber *savedStick = [NSUserDefaults.standardUserDefaults objectForKey:AKTouchStickDefaultsKey];
+        self.stickEnabled = self.trackpadEnabled && (savedStick ? savedStick.boolValue : phone);
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(suspendInput:) name:UIApplicationWillResignActiveNotification object:nil];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(windowResigned:) name:UIWindowDidResignKeyNotification object:nil];
+        // iOS hides its keyboard while a hardware keyboard is connected (a
+        // Bluetooth one, or a Mac's through Device Hub); log when that changes.
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(hardwareKeyboardChanged:) name:GCKeyboardDidConnectNotification object:nil];
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(hardwareKeyboardChanged:) name:GCKeyboardDidDisconnectNotification object:nil];
     }
     return self;
 }
 
-// The gap between the buttons belongs to the game.
+// The gaps between the buttons belong to the game.
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
     (void)event;
-    return CGRectContainsPoint(_trackpadButton.frame, point) || CGRectContainsPoint(_keyboardButton.frame, point);
+    for (UIView *button in self.subviews)
+        if ([button isKindOfClass:UIButton.class] && !button.hidden && CGRectContainsPoint(button.frame, point)) return YES;
+    return NO;
+}
+- (BOOL)vertical { return _layout.columns > 0; }
+- (void)setLayout:(AKTouchLayout)layout {
+    if (!memcmp(&_layout, &layout, sizeof layout)) return;
+    _layout = layout;
+    [self releaseQuickKeys];
+    [self setNeedsLayout];
 }
 - (void)layoutSubviews {
     [super layoutSubviews];
-    _trackpadButton.frame = CGRectMake(0, 0, 44, 44);
-    _keyboardButton.frame = CGRectMake(52, 0, 44, 44);
+    if (!self.vertical) {
+        for (UIView *button in self.subviews) button.layer.cornerRadius = 22;
+        _jumpButton.frame = CGRectMake(0, 0, 44, 44);
+        _stickButton.frame = CGRectMake(52, 0, 44, 44);
+        _trackpadButton.frame = CGRectMake(104, 0, 44, 44);
+        _keyboardButton.frame = CGRectMake(156, 0, 44, 44);
+        for (UIButton *button in _quickButtons) button.hidden = YES;
+        _escapeButton.hidden = _tabButton.hidden = _shiftButton.hidden = YES;
+        [self quickKeyUp:_shiftButton];
+        return;
+    }
+    // The columns stand where the layout put them, whatever this view's
+    // height, and a button that reaches below their lower limit is hidden.
+    // While the iOS keyboard is open, this view's bottom edge is the
+    // keyboard's top, and that is the limit; the keyboard button, at the top,
+    // stays. Only while it is open: UIKit can leave that edge raised after
+    // the keyboard has closed.
+    CGFloat limit = self.keyboardVisible ? MIN(self.bounds.size.height, _layout.bottom) : _layout.bottom;
+    for (NSUInteger i = 0; i < AKTouchButtonCount; i++) {
+        UIButton *button = _columnButtons[i];
+        button.frame = _layout.buttons[i];
+        button.layer.cornerRadius = button.frame.size.width / 2;
+        BOOL fits = CGRectGetMaxY(button.frame) <= limit;
+        if (!fits) [self quickKeyUp:button];
+        button.hidden = !fits;
+    }
+}
+- (void)setShiftHeld:(BOOL)held {
+    if (_shiftHeld == held) return;
+    _shiftHeld = held;
+    _shiftButton.tintColor = held ? UIColor.systemCyanColor : UIColor.whiteColor;
+    [self.delegate touchShift:held];
+}
+- (void)quickKeyDown:(UIButton *)button {
+    if (button.tag == AKShiftTag) { [self setShiftHeld:YES]; return; }
+    if (button.tag < 0 || button.tag > AKTabTag) return;
+    unsigned bit = 1u << button.tag;
+    if (_quickHeld & bit) return;
+    _quickHeld |= bit;
+    [self.delegate touchKey:AKQuickKeyCodes[button.tag] characters:AKQuickKeyCharacters(button.tag) pressed:YES];
+}
+- (void)quickKeyUp:(UIButton *)button {
+    if (button.tag == AKShiftTag) { [self setShiftHeld:NO]; return; }
+    if (button.tag < 0 || button.tag > AKTabTag) return;
+    unsigned bit = 1u << button.tag;
+    if (!(_quickHeld & bit)) return;
+    _quickHeld &= ~bit;
+    [self.delegate touchKey:AKQuickKeyCodes[button.tag] characters:AKQuickKeyCharacters(button.tag) pressed:NO];
+}
+- (void)releaseQuickKeys {
+    for (UIButton *button in _quickButtons) [self quickKeyUp:button];
+    for (UIButton *button in @[_jumpButton, _escapeButton, _tabButton, _shiftButton]) [self quickKeyUp:button];
+}
+- (void)setStickEnabled:(BOOL)enabled {
+    [self cancelTouches];
+    _stickEnabled = enabled;
+    _stickButton.tintColor = enabled ? UIColor.systemCyanColor : UIColor.whiteColor;
+    _stickButton.accessibilityLabel = enabled ? @"Disable movement stick" : @"Enable movement stick";
+    _stickButton.accessibilityValue = enabled ? @"On" : @"Off";
+    if (enabled && !self.trackpadEnabled) self.trackpadEnabled = YES;
+}
+- (void)toggleStick {
+    self.stickEnabled = !self.stickEnabled;
+    [NSUserDefaults.standardUserDefaults setBool:self.stickEnabled forKey:AKTouchStickDefaultsKey];
+    [NSUserDefaults.standardUserDefaults setBool:self.trackpadEnabled forKey:AKTouchTrackpadDefaultsKey];
 }
 - (void)setTrackpadEnabled:(BOOL)enabled {
     [self cancelTouches];
     _trackpadEnabled = enabled;
+    if (!enabled && self.stickEnabled) self.stickEnabled = NO;
+    [self updateTrackpadButton];
+    [self.delegate touchTrackpadChanged:enabled];
+}
+- (void)setCursorMode:(BOOL)cursorMode {
+    [self cancelTouches];
+    _cursorMode = cursorMode;
+    [self updateTrackpadButton];
+    // The host draws a pointer in cursor mode only.
+    [self.delegate touchTrackpadChanged:self.trackpadEnabled];
+}
+// For a camera-mode game the hand button shows the mode: a camera while
+// touches turn the camera, a cyan pointer in cursor mode.
+- (void)updateTrackpadButton {
+    if (_cameraProfile) {
+        [_trackpadButton setImage:[UIImage systemImageNamed:_cursorMode ? @"cursorarrow" : @"rotate.3d"] forState:UIControlStateNormal];
+        _trackpadButton.tintColor = _cursorMode ? UIColor.systemCyanColor : UIColor.whiteColor;
+        _trackpadButton.accessibilityLabel = @"Cursor mode";
+        _trackpadButton.accessibilityValue = _cursorMode ? @"On" : @"Off";
+        _trackpadButton.accessibilityHint = _cursorMode ? @"One finger moves the pointer; tap to click. Turn off for camera mode." :
+            @"Slide one finger to turn the camera; tap to right-click where you touch. With Shift held, slide to drag with the left button. Two fingers scroll or tap to left-click. Turn on for a pointer.";
+        return;
+    }
+    BOOL enabled = self.trackpadEnabled;
     _trackpadButton.tintColor = enabled ? UIColor.systemCyanColor : UIColor.whiteColor;
     _trackpadButton.accessibilityLabel = enabled ? @"Disable touch trackpad" : @"Enable touch trackpad";
     _trackpadButton.accessibilityValue = enabled ? @"On" : @"Off";
-    [self.delegate touchTrackpadChanged:enabled];
 }
 - (void)toggleTrackpad {
+    if (_cameraProfile) {
+        self.cursorMode = !self.cursorMode;
+        if (!self.trackpadEnabled) self.trackpadEnabled = YES;
+        [NSUserDefaults.standardUserDefaults setBool:self.cursorMode forKey:AKTouchCursorModeDefaultsKey];
+        return;
+    }
     self.trackpadEnabled = !self.trackpadEnabled;
     [NSUserDefaults.standardUserDefaults setBool:self.trackpadEnabled forKey:AKTouchTrackpadDefaultsKey];
+    [NSUserDefaults.standardUserDefaults setBool:self.stickEnabled forKey:AKTouchStickDefaultsKey];
 }
 - (BOOL)canBecomeFirstResponder { return YES; }
 - (BOOL)keyboardVisible { return self.isFirstResponder; }
@@ -107,16 +405,27 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 - (void)updateKeyboardButton {
     [_keyboardButton setImage:[UIImage systemImageNamed:self.keyboardVisible ? @"keyboard.chevron.compact.down" : @"keyboard"] forState:UIControlStateNormal];
     _keyboardButton.accessibilityLabel = self.keyboardVisible ? @"Hide keyboard" : @"Show keyboard";
+    [self setNeedsLayout];   // the columns' buttons under the keyboard hide and return
 }
 - (void)toggleKeyboard {
     [self cancelTouches];
-    if (self.keyboardVisible) [self dismissKeyboard];
-    else [self becomeFirstResponder];
+    if (self.keyboardVisible) { [self dismissKeyboard]; return; }
+    BOOL accepted = [self becomeFirstResponder];
+    // Whether the keyboard itself appears is iOS's choice: with a hardware
+    // keyboard connected it shows only the row above it. No text is logged.
+    AKLog(@"software keyboard requested accepted=%d window_key=%d hardware_keyboard=%d",
+          accepted, self.window.isKeyWindow, GCKeyboard.coalescedKeyboard != nil);
+    __weak AKTouchControls *weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC * 6 / 10), dispatch_get_main_queue(), ^{
+        AKTouchControls *controls = weakSelf;
+        if (controls) AKLog(@"software keyboard first_responder=%d height=%.0f", controls.isFirstResponder,
+                            controls.superview.keyboardLayoutGuide.layoutFrame.size.height);
+    });
 }
 - (void)dismissKeyboard {
     if (self.isFirstResponder) {
         [self resignFirstResponder];
-        [self.superview becomeFirstResponder];
+        [(self.gameView ?: self.superview) becomeFirstResponder];
     }
 }
 // The guest owns the text and selection. Do not cache account/password text
@@ -163,18 +472,83 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 - (void)processTouches:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
     if (!self.trackpadEnabled) return;
     for (UITouch *touch in touches) if (touch.phase == UITouchPhaseCancelled) [self cancelTouches];
+    // UIKit can report one event's touches to several handlers (began and
+    // moved), so the same event may arrive twice; each step is idempotent.
+    UIView *host = self.gameView ?: self.superview;
     unsigned count = 0;
     CGPoint center = CGPointZero;
     for (UITouch *touch in event.allTouches) {
-        if (touch.type != UITouchTypeDirect || touch.view != self.superview ||
-            touch.phase == UITouchPhaseEnded || touch.phase == UITouchPhaseCancelled) continue;
-        CGPoint point = [touch locationInView:self.superview];
+        if (touch.type != UITouchTypeDirect || touch.view != host) continue;
+        BOOL over = touch.phase == UITouchPhaseEnded || touch.phase == UITouchPhaseCancelled;
+        CGPoint point = [touch locationInView:host];
+        if (touch == _stickTouch) {
+            [self stickPhase:touch.phase at:point];
+            if (over) _stickTouch = nil;
+            continue;
+        }
+        if ([_ignoredTouches containsObject:touch]) {
+            if (over) [_ignoredTouches removeObject:touch];
+            continue;
+        }
+        if (over) continue;
+        // Where a touch lands decides its half for the rest of its life.
+        if (touch.phase == UITouchPhaseBegan && self.stickEnabled && point.x < host.bounds.size.width / 2) {
+            if (_stickTouch) [_ignoredTouches addObject:touch];
+            else { _stickTouch = touch; [self stickPhase:UITouchPhaseBegan at:point]; }
+            continue;
+        }
         center.x += point.x; center.y += point.y; count++;
     }
     if (count) { center.x /= count; center.y /= count; }
-    AKTrackpadUpdate(&_pad, count, center.x, center.y, event.timestamp, AKEmitTouch, (__bridge void *)self);
+    [self padFingers:count at:center time:event.timestamp];
+}
+// One line per gesture for the first of a session: how long after landing
+// iOS reported the first movement, how large that and the next steps were,
+// and how far the gesture went. Sizes in points and times only.
+- (void)traceFingers:(unsigned)fingers at:(CGPoint)center time:(NSTimeInterval)time {
+    if (_traceReports >= 300) return;
+    if (!fingers) {
+        if (!_trace.active) return;
+        NSMutableString *steps = [NSMutableString new];
+        for (unsigned i = 0; i < MIN(_trace.count, 6u); i++) [steps appendFormat:@"%s%.1f", i ? "," : "", _trace.steps[i]];
+        _traceReports++;
+        AKLog(@"touch gesture mode=%s fingers=%u ms=%.0f first_move_ms=%.0f steps=%u first=[%@] reach=%.0f",
+              _cursorMode ? "cursor" : "camera", _trace.peak, (time - _trace.began) * 1000,
+              _trace.count ? (_trace.firstMove - _trace.began) * 1000 : -1, _trace.count, steps, _trace.reach);
+        _trace.active = NO;
+        return;
+    }
+    if (!_trace.active) {
+        memset(&_trace, 0, sizeof _trace);
+        _trace.active = YES; _trace.began = time; _trace.origin = _trace.previous = center;
+    }
+    if (fingers != _trace.peak && fingers > _trace.peak) { _trace.peak = fingers; _trace.previous = center; return; }
+    double step = hypot(center.x - _trace.previous.x, center.y - _trace.previous.y);
+    _trace.previous = center;
+    if (!(step > 0) || fingers != _trace.peak) return;
+    if (!_trace.count) _trace.firstMove = time;
+    if (_trace.count < 6) _trace.steps[_trace.count] = step;
+    _trace.count++;
+    _trace.reach = MAX(_trace.reach, hypot(center.x - _trace.origin.x, center.y - _trace.origin.y));
+}
+- (void)padFingers:(unsigned)fingers at:(CGPoint)center time:(NSTimeInterval)time {
+    [self traceFingers:fingers at:center time:time];
+    if (!_cursorMode) {
+        if (!fingers && !_camera.fingers) return;
+        // A camera drag presses the right button in the middle of the game.
+        UIView *host = self.gameView ?: self.superview;
+        _camera.anchored = host != nil;
+        _camera.anchorX = host.bounds.size.width / 2; _camera.anchorY = host.bounds.size.height / 2;
+        _camera.left = _shiftHeld;
+        AKTouchCameraUpdate(&_camera, fingers, center.x, center.y, time, AKEmitTouch, (__bridge void *)self);
+        return;
+    }
+    if (!fingers && !_pad.fingers && !_pad.dragging) return;
+    _pad.leftDrag = _shiftHeld;
+    _pad.linear = _linearPointer;
+    AKTrackpadUpdate(&_pad, fingers, center.x, center.y, time, AKEmitTouch, (__bridge void *)self);
     [_holdTimer invalidate]; _holdTimer = nil;
-    if (_pad.fingers && !_pad.blocked && !_pad.lifting && !_pad.dragging && _pad.travelled <= 8) {
+    if (_pad.fingers && !_pad.blocked && !_pad.lifting && !_pad.dragging && _pad.reach <= 8) {
         __weak AKTouchControls *weakSelf = self;
         _holdTimer = [NSTimer timerWithTimeInterval:MAX(0.01, _pad.started + 0.46 - NSProcessInfo.processInfo.systemUptime)
                                           repeats:NO block:^(NSTimer *timer) {
@@ -185,15 +559,67 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
         [NSRunLoop.mainRunLoop addTimer:_holdTimer forMode:NSRunLoopCommonModes];
     }
 }
+- (UIView *)stickCircle:(CGFloat)diameter alpha:(CGFloat)alpha {
+    UIView *circle = [[UIView alloc] initWithFrame:CGRectMake(0, 0, diameter, diameter)];
+    circle.userInteractionEnabled = NO;
+    circle.hidden = YES;
+    circle.backgroundColor = [UIColor.blackColor colorWithAlphaComponent:alpha];
+    circle.layer.cornerRadius = diameter / 2;
+    circle.layer.borderWidth = 1;
+    circle.layer.borderColor = [UIColor.whiteColor colorWithAlphaComponent:0.5].CGColor;
+    circle.layer.zPosition = 100001;
+    return circle;
+}
+- (void)stickPhase:(UITouchPhase)phase at:(CGPoint)point {
+    if (phase == UITouchPhaseBegan) AKStickBegin(&_stick, point.x, point.y);
+    else if (phase == UITouchPhaseEnded || phase == UITouchPhaseCancelled) AKStickEnd(&_stick, AKEmitStick, (__bridge void *)self);
+    else AKStickMove(&_stick, point.x, point.y, AKEmitStick, (__bridge void *)self);
+    [self drawStick];
+}
+// Drawn under the buttons where the finger landed; it never takes touches.
+- (void)drawStick {
+    if (!_stickBase) {
+        _stickBase = [self stickCircle:2 * AKStickRadius alpha:0.25];
+        _stickKnob = [self stickCircle:48 alpha:0.45];
+    }
+    // In the game's view and its coordinates, below these buttons.
+    UIView *host = self.gameView ?: self.superview;
+    if (_stickBase.superview != host) {
+        if (self.superview == host) [host insertSubview:_stickBase belowSubview:self];
+        else [host addSubview:_stickBase];
+        [host insertSubview:_stickKnob aboveSubview:_stickBase];
+    }
+    _stickBase.hidden = _stickKnob.hidden = !_stick.active;
+    if (!_stick.active) return;
+    _stickBase.center = CGPointMake(_stick.originX, _stick.originY);
+    _stickKnob.center = CGPointMake(_stick.x, _stick.y);
+    _stickKnob.backgroundColor = _stick.directions ? [UIColor.systemCyanColor colorWithAlphaComponent:0.5] :
+                                                     [UIColor.blackColor colorWithAlphaComponent:0.45];
+}
 - (void)cancelTouches {
     [_holdTimer invalidate]; _holdTimer = nil;
     AKTrackpadCancel(&_pad, AKEmitTouch, (__bridge void *)self);
     if (!_pad.fingers) _pad = (AKTrackpad){0};
+    AKTouchCameraCancel(&_camera, AKEmitTouch, (__bridge void *)self);
+    if (!_camera.fingers) _camera = (AKTouchCamera){0};
+    // A stick touch that outlives a cancellation stays inert until lifted.
+    if (_stickTouch) [_ignoredTouches addObject:_stickTouch];
+    _stickTouch = nil;
+    if (_stick.active) [self stickPhase:UITouchPhaseCancelled at:CGPointZero];
+    [self flushReleases];
+    _trace.active = NO;
+}
+- (void)hardwareKeyboardChanged:(NSNotification *)notification {
+    AKLog(@"hardware keyboard %@ (any connected=%d)", [notification.name isEqual:GCKeyboardDidConnectNotification] ? @"connected" : @"disconnected",
+          GCKeyboard.coalescedKeyboard != nil);
 }
 - (void)suspendInput:(NSNotification *)notification {
-    (void)notification;
+    if (self.keyboardVisible) AKLog(@"touch controls suspended reason=%@", notification ? notification.name : @"removed from window");
     [self cancelTouches];
+    [self releaseQuickKeys];
     _pad = (AKTrackpad){0};
+    _camera = (AKTouchCamera){0};
+    [_ignoredTouches removeAllObjects];
     [self dismissKeyboard];
 }
 - (void)windowResigned:(NSNotification *)notification {
@@ -205,6 +631,7 @@ static void AKEmitTouch(void *context, AKTrackpadAction action, double x, double
 }
 - (void)dealloc {
     [_holdTimer invalidate];
+    for (unsigned button = 0; button < 3; button++) [_release[button] invalidate];
     [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 @end

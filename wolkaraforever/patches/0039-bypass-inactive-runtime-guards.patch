@@ -13,10 +13,10 @@
 # Upstream: candidate.
 
 diff --git a/runtime/NativeGuest.m b/runtime/NativeGuest.m
+index da030c4..4c7a8bf 100644
 --- a/runtime/NativeGuest.m
 +++ b/runtime/NativeGuest.m
-@@ -594,6 +594,13 @@ static int guest_mprotect(void *address, size_t size, int prot) {
-     if (inside_exec(address,size)) {
+@@ -703,6 +703,13 @@ static int guest_mprotect(void *address, size_t size, int prot) {
          if (inside_shadow(address,size)) return mprotect(address,size,PROT_READ|PROT_WRITE);
          return 0;
      }
@@ -29,7 +29,8 @@ diff --git a/runtime/NativeGuest.m b/runtime/NativeGuest.m
 +    }
      // Keep executable backing RX; imported stores/copies use its shared RW view.
      if (inside(address,size) && (prot & PROT_EXEC)) prot &= ~PROT_WRITE;
-@@ -606,5 +613,9 @@ static int guest_munmap(void *address, size_t size) {
+     int result = gsv_enabled()?gsv_protect(address,size,prot):gv_protect(&vm_budget,address,size,prot);
+@@ -721,6 +728,10 @@ static int guest_munmap(void *address, size_t size) {
          if (inside_shadow(address,size)) return mprotect(address,size,PROT_READ|PROT_WRITE);
          return 0;
      }
@@ -39,7 +40,8 @@ diff --git a/runtime/NativeGuest.m b/runtime/NativeGuest.m
 +        return munmap(address,size);
      // Reserve the runtime arena so a later fixed/hinted remap preserves the RX
      // backing established before guest execution. Inaccessible until remapped.
-@@ -642,5 +653,12 @@ static void *guest_mmap(void *address, size_t size, int prot, int flags, int fd,
+     if (inside(address,size)) return mprotect(address,size,PROT_NONE);
+@@ -751,6 +762,13 @@ static void *guest_mmap(void *address, size_t size, int prot, int flags, int fd,
          sys_dcache_flush(alias,size); sys_icache_invalidate(address,size);
          return address;
      }
@@ -51,8 +53,10 @@ diff --git a/runtime/NativeGuest.m b/runtime/NativeGuest.m
 +        return result;
 +    }
      void *result;
+     static atomic_uint space_reports;
      if (gsv_enabled()) result=gsv_map(address,size,prot,flags,fd,offset);
-@@ -798,4 +816,7 @@ static int guest_ulock_wait(uint32_t operation,void *address,uint64_t value,uint
+@@ -952,6 +970,9 @@ static long guest_dispatch_wait(dispatch_semaphore_t semaphore,dispatch_time_t t
+ static int guest_ulock_wait(uint32_t operation,void *address,uint64_t value,uint32_t timeout) {
      static _Thread_local bool pumping;
      if(pumping) return __ulock_wait(operation,address,value,timeout);
 +    // Only the main guest thread pumps UIKit while a shader translation is
@@ -60,9 +64,13 @@ diff --git a/runtime/NativeGuest.m b/runtime/NativeGuest.m
 +    if (!trace_guest && !pthread_main_np()) return __ulock_wait(operation,address,value,timeout);
      pumping=true;
      unsigned tid=(trace_guest && gsv_enabled())?trace_tid():0;
-@@ -883,4 +904,4 @@ static void *guest_dlsym(void *handle, const char *name) {
+     GWWaitRecord previous=gwt_begin(tid,"__ulock_wait",address);
+@@ -1095,7 +1116,7 @@ static void *guest_dlsym(void *handle, const char *name) {
+     // Tracing reaches through the application's own libraries: what a placed
      // image exports is wrapped so each call logs its arguments and result.
      if (trace_guest && placed && value && inside(value,4)) value=gw_wrap(name,value);
 -    LOG("[native] dlsym(%s) -> %p\n",name?name:"(null)",value); return value;
 +    if (trace_guest) LOG("[native] dlsym(%s) -> %p\n",name?name:"(null)",value); return value;
  }
+ // Placed images stay for the life of the guest.
+ static int guest_dlclose(void *handle) {

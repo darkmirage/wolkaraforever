@@ -1,10 +1,10 @@
-#import "TouchCamera.h"
+#import "TouchCameraGesture.h"
 #import "TouchControllerLog.h"
 #include <math.h>
 #include <string.h>
 
-// The platform's own tap/hold threshold: a gesture that has travelled further than this is
-// motion, and every tap-like decision in TouchTrackpad.c is taken against it. The log reports
+// The trackpad's own tap/hold threshold: a gesture that has travelled further than this is
+// motion, and every tap-like decision in LayerTrackpad.c is taken against it. The log reports
 // the crossing so a device run can read the same line the pad drew.
 static const double AKTouchCameraTapTravel = 8;
 // A jump is not motion. A quarter of the short side is far beyond any thumb: at 60 frames a
@@ -14,7 +14,7 @@ static const double AKTouchCameraJumpLimitFloor = 96;
 static const double AKTouchCameraJumpLimitFraction = 0.25;
 
 typedef struct {
-    AKTrackpadEmit _Nullable emit;
+    AKLayerTrackpadEmit _Nullable emit;
     void *_Nullable context;
 } AKTouchCameraSink;
 
@@ -29,20 +29,20 @@ static NSString *AKTouchCameraButtonName(unsigned button) {
 
 // Every event a gesture produces goes through here, which is the one place a press and its
 // release are counted. The action itself is unchanged and reached the host exactly as before.
-static void AKTouchCameraSinkEmit(void *context, AKTrackpadAction action, double x, double y,
+static void AKTouchCameraSinkEmit(void *context, AKLayerTrackpadAction action, double x, double y,
                                   unsigned button) {
     AKTouchCameraSink *sink = context;
     if (sink->emit) sink->emit(sink->context, action, x, y, button);
-    if (action == AKTrackpadDown)
+    if (action == AKLayerTrackpadDown)
         AKTouchControllerLog(AKTouchControllerEventPress, @"sent",
                              @{@"control": @"pointer", @"element": AKTouchCameraButtonName(button)});
-    else if (action == AKTrackpadUp)
+    else if (action == AKLayerTrackpadUp)
         AKTouchControllerLog(AKTouchControllerEventRelease, @"sent",
                              @{@"control": @"pointer", @"element": AKTouchCameraButtonName(button)});
 }
 
-static void AKTouchCameraDeliver(AKTrackpadEmit _Nullable emit, void *_Nullable context,
-                                 AKTrackpadAction action, unsigned button) {
+static void AKTouchCameraDeliver(AKLayerTrackpadEmit _Nullable emit, void *_Nullable context,
+                                 AKLayerTrackpadAction action, unsigned button) {
     if (!emit) return;
     AKTouchCameraSink sink = { emit, context };
     AKTouchCameraSinkEmit(&sink, action, 0, 0, button);
@@ -56,7 +56,7 @@ static void AKTouchCameraForget(AKTouchCameraGesture *camera) {
 }
 
 void AKTouchCameraReset(AKTouchCameraGesture *camera, NSString *reason,
-                        AKTrackpadEmit emit, void *context) {
+                        AKLayerTrackpadEmit emit, void *context) {
     if (!camera) return;
     BOOL playerCancel = [reason isEqualToString:@"cancelled"];
     BOOL wasActive = camera->pad.fingers || camera->pad.dragging || camera->pad.blocked ||
@@ -64,20 +64,20 @@ void AKTouchCameraReset(AKTouchCameraGesture *camera, NSString *reason,
     camera->generation++;
     camera->handedOff = NO;
     if (playerCancel) {
-        // The platform's own rule, kept exactly: `AKTrackpadCancel` releases a held button
+        // The platform's own rule, kept exactly: `AKLayerTrackpadCancel` releases a held button
         // once and then *suppresses the rest of this gesture until every finger is lifted*, so
         // a cancelled touch cannot turn into a drag. Clearing the pad outright here would hand
         // those leftover fingers to the camera as motion - the jump `blocked` exists to
         // prevent - which is a change to behaviour this build has no reason to make.
         AKTouchCameraSink sink = { emit, context };
-        AKTrackpadCancel(&camera->pad, emit ? AKTouchCameraSinkEmit : NULL, emit ? &sink : NULL);
+        AKLayerTrackpadCancel(&camera->pad, emit ? AKTouchCameraSinkEmit : NULL, emit ? &sink : NULL);
         if (!camera->pad.fingers) memset(&camera->pad, 0, sizeof camera->pad);
     } else {
         // Every other exit is the app taking the gesture away - the background, a panel, a
         // rotation, a controller arriving, teardown. Nothing is touching the screen for it, so
         // it is released once and cleared completely, which is what makes the next touch a
         // camera drag immediately.
-        if (camera->pad.dragging) AKTouchCameraDeliver(emit, context, AKTrackpadUp, camera->pad.button);
+        if (camera->pad.dragging) AKTouchCameraDeliver(emit, context, AKLayerTrackpadUp, camera->pad.button);
         AKTouchCameraForget(camera);
     }
     if (!emit || !wasActive) return;
@@ -93,8 +93,8 @@ BOOL AKTouchCameraIsActive(const AKTouchCameraGesture *camera) {
                       camera->pad.blocked);
 }
 
-void AKTouchCameraUpdate(AKTouchCameraGesture *camera, unsigned fingers, double x, double y,
-                         double time, CGSize surface, AKTrackpadEmit emit, void *context) {
+void AKTouchCameraGestureUpdate(AKTouchCameraGesture *camera, unsigned fingers, double x, double y,
+                                  double time, CGSize surface, AKLayerTrackpadEmit emit, void *context) {
     if (!camera) return;
     camera->width = surface.width;
     camera->height = surface.height;
@@ -107,24 +107,24 @@ void AKTouchCameraUpdate(AKTouchCameraGesture *camera, unsigned fingers, double 
         if (isfinite(jump) && jump > limit) {
             // The button, if one was held, is released exactly once by the close before the
             // log line: a rebase is never a stuck press.
-            if (camera->pad.dragging) AKTouchCameraDeliver(emit, context, AKTrackpadUp, camera->pad.button);
+            if (camera->pad.dragging) AKTouchCameraDeliver(emit, context, AKLayerTrackpadUp, camera->pad.button);
             AKTouchCameraForget(camera);
             AKTouchControllerLog(AKTouchControllerEventThreshold, @"rebased",
                                  @{@"control": @"camera", @"reason": @"centroid"});
         }
     }
     AKTouchCameraSink sink = { emit, context };
-    AKTrackpadUpdate(&camera->pad, fingers, x, y, time, AKTouchCameraSinkEmit, &sink);
+    AKLayerTrackpadUpdate(&camera->pad, fingers, x, y, time, AKTouchCameraSinkEmit, &sink);
     if (!camera->handedOff && camera->pad.fingers > 0 && camera->pad.travelled > AKTouchCameraTapTravel) {
         camera->handedOff = YES;
         AKTouchControllerLog(AKTouchControllerEventThreshold, @"handoff", @{@"control": @"camera"});
     }
 }
 
-BOOL AKTouchCameraHold(AKTouchCameraGesture *camera, double time, AKTrackpadEmit emit, void *context) {
+BOOL AKTouchCameraHold(AKTouchCameraGesture *camera, double time, AKLayerTrackpadEmit emit, void *context) {
     if (!camera || camera->pad.dragging) return NO;
     AKTouchCameraSink sink = { emit, context };
-    AKTrackpadHold(&camera->pad, time, AKTouchCameraSinkEmit, &sink);
+    AKLayerTrackpadHold(&camera->pad, time, AKTouchCameraSinkEmit, &sink);
     // The press itself was logged by the sink, once, with the button it holds.
     return camera->pad.dragging;
 }

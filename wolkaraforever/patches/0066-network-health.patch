@@ -6,11 +6,13 @@
 # Applies to: runtime/NativeGuest.h, runtime/NativeGuest.m
 # Upstream: product-layer diagnostic; off by default.
 
+diff --git a/runtime/NativeGuest.h b/runtime/NativeGuest.h
+index ed411e0..fb28380 100644
 --- a/runtime/NativeGuest.h
 +++ b/runtime/NativeGuest.h
-@@ -16,6 +16,9 @@
- // compatibility runtime started from a profile. Copied; at most 64 of 4096
- // bytes. Call before ng_initialize; default: none.
+@@ -18,6 +18,9 @@ NGStartupStep ng_startup_step(void);
+ // Profile identity for restricted, opt-in runtime experiments.
+ void ng_set_profile_identifier(const char *identifier);
  void ng_set_arguments(const char *const *arguments, size_t count);
 +// Enable bounded anonymous TCP health counters for this launch. The host consumes its
 +// one-launch preference before this call; default: disabled.
@@ -18,17 +20,19 @@
  // Host-only cleanup before a guest exits; never reads application memory.
  // Install before guest entry. A nonzero exit remains an error exit.
  typedef void (*NGExitObserver)(int code, void *context);
+diff --git a/runtime/NativeGuest.m b/runtime/NativeGuest.m
+index 0f90c27..0de98be 100644
 --- a/runtime/NativeGuest.m
 +++ b/runtime/NativeGuest.m
-@@ -22,6 +22,7 @@
- #include "GuestWait.h"
+@@ -28,6 +28,7 @@ static NativeCodeMemory local_quarantine;
  #include "GuestWaitTrace.h"
+ #include "ProcessEnd.h"
  #include "SignedImage.h"
 +#include "NetworkHealth.h"
  #include <dlfcn.h>
+ #include <execinfo.h>
  #include <mach-o/loader.h>
- #import <objc/objc-exception.h>
-@@ -385,6 +386,8 @@
+@@ -468,6 +469,8 @@ void ng_set_arguments(const char *const *arguments, size_t count) {
          launch_arguments[launch_argument_count++]=strdup(arguments[i]);
      }
  }
@@ -37,7 +41,7 @@
  // Libraries a profile names beside the executable's own list; see ng_set_libraries.
  static char *launch_root, *launch_libraries[GL_MAX_LIBRARIES];
  static size_t launch_library_count;
-@@ -734,6 +737,7 @@
+@@ -895,6 +898,7 @@ static bool case_insensitive_files;
  static DIR *guest_opendir(const char *);
  static struct dirent *guest_readdir(DIR *);
  static int guest_socket(int, int, int);
@@ -45,7 +49,7 @@
  static int guest_connect(int, const struct sockaddr *, socklen_t);
  static int guest_getsockopt(int, int, int, void *, socklen_t *);
  static int guest_setsockopt(int, int, int, const void *, socklen_t);
-@@ -825,8 +829,10 @@
+@@ -1051,8 +1055,10 @@ static void *hook(const char *name) {
          HOOK("realpath",guest_realpath); HOOK("realpath$DARWIN_EXTSN",guest_realpath_extsn);
          if (trace_guest) HOOK("readdir",guest_readdir);
      }
@@ -57,7 +61,7 @@
          HOOK("getsockopt",guest_getsockopt); HOOK("setsockopt",guest_setsockopt);
          HOOK("shutdown",guest_shutdown); HOOK("poll",guest_poll);
          HOOK("sendto",guest_sendto); HOOK("recvfrom",guest_recvfrom);
-@@ -1194,7 +1200,7 @@
+@@ -1472,7 +1478,7 @@ static unsigned trace_tid(void);
  // Sockets, under --trace-guest: who the guest tries to talk to (a Galaxy
  // client's local socket, an HTTPS endpoint) says what a failed sign-in needed.
  static int guest_socket(int domain, int type, int protocol) {
@@ -66,7 +70,7 @@
      int code=errno;
      if (trace_guest) {
          const char *family=domain==AF_UNIX?"AF_UNIX":domain==AF_INET?"AF_INET":domain==AF_INET6?"AF_INET6":"?";
-@@ -1202,6 +1208,7 @@
+@@ -1480,6 +1486,7 @@ static int guest_socket(int domain, int type, int protocol) {
      }
      return fd;
  }
@@ -74,7 +78,7 @@
  static int guest_connect(int fd, const struct sockaddr *address, socklen_t size) {
      int result=connect(fd,address,size);
      int code=errno;
-@@ -1807,6 +1814,10 @@
+@@ -2286,6 +2293,10 @@ bool ng_initialize(const char *path, const char *frameworks, const char *library
      }
      trace_guest=[NSProcessInfo.processInfo.arguments containsObject:@"--trace-guest"];
      if (trace_guest) LOG("[native] tracing failed file access, created directories, getenv, sockets and the calls dlsym hands out (--trace-guest)\n");
@@ -85,7 +89,7 @@
      if (trace_guest) {
          struct sigaction crash_registers={0};
          crash_registers.sa_sigaction=guest_crash_registers;
-@@ -2046,6 +2057,8 @@
+@@ -2615,6 +2626,8 @@ bool ng_initialize(const char *path, const char *frameworks, const char *library
      }
  done:
      LOG("[native] result %s=%s\n",full_startup?"startup_return":"first_initializer",ok?"PASS":"FAIL");

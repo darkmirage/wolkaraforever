@@ -1,5 +1,6 @@
 #import "LibraryViewController.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import "GameDownload.h"
 
 @interface TKLibraryViewController () <UIDocumentPickerDelegate>
 @end
@@ -12,12 +13,28 @@ static BOOL TKTouchControlsShown(void) {
     return [saved isKindOfClass:NSNumber.class] ? saved.boolValue : UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPhone;
 }
 
+// AKPointerAccelerationDefaultsKey and AKPointerSpeedDefaultsKey, likewise.
+static NSString *const TKPointerAccelerationKey=@"AKPointerAcceleration";
+static NSString *const TKPointerSpeedKey=@"AKPointerSpeed";
+static BOOL TKPointerAccelerated(void) {
+    NSNumber *saved=[NSUserDefaults.standardUserDefaults objectForKey:TKPointerAccelerationKey];
+    return ![saved isKindOfClass:NSNumber.class] || saved.boolValue;
+}
+static double TKPointerSpeed(void) {
+    NSNumber *saved=[NSUserDefaults.standardUserDefaults objectForKey:TKPointerSpeedKey];
+    return [saved isKindOfClass:NSNumber.class] ? saved.doubleValue : 1;
+}
+
 @implementation TKLibraryViewController {
     TKAppLibrary *_library;
     NSArray<TKApp *> *_apps;
     dispatch_queue_t _queue;
     BOOL _discovered, _importing;
     UIBarButtonItem *_addItem, *_controlsItem;
+    // The experimental download in progress, its alert and the bar in it.
+    TKGameDownload *_download;
+    UIAlertController *_downloadAlert;
+    UIProgressView *_downloadBar;
 }
 
 - (instancetype)initWithLibrary:(TKAppLibrary *)library {
@@ -42,7 +59,7 @@ static BOOL TKTouchControlsShown(void) {
     UIBarButtonItem *mode=[[UIBarButtonItem alloc] initWithTitle:@"Execution Mode"
         style:UIBarButtonItemStylePlain target:self action:@selector(showExecutionMode)];
     _controlsItem=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"hand.tap"] menu:nil];
-    _controlsItem.accessibilityLabel=@"On-Screen Controls";
+    _controlsItem.accessibilityLabel=@"Controls";
     [self updateControlsMenu];
     self.navigationItem.leftBarButtonItems=@[diagnostics,mode,_controlsItem];
     // Files copied in with the Files app or a profile's install script appear
@@ -61,6 +78,7 @@ static BOOL TKTouchControlsShown(void) {
 - (void)reload {
     _apps=_library.apps;
     _addItem.enabled=!_importing;
+    [self updateAddMenu];
     [self.tableView reloadData];
     [self updateEmptyState];
 }
@@ -198,7 +216,7 @@ static BOOL TKTouchControlsShown(void) {
 
 - (void)showDiagnostics { [self.delegate libraryViewControllerShowDiagnostics:self]; }
 - (void)showExecutionMode { [self.delegate libraryViewControllerShowExecutionMode:self]; }
-// Optional keyboard and touch-trackpad buttons over a game, read when it starts.
+// Optional movement-stick, touch-trackpad and keyboard buttons over a game, read when it starts.
 - (void)updateControlsMenu {
     __weak TKLibraryViewController *weakSelf=self;
     UIAction *toggle=[UIAction actionWithTitle:@"On-Screen Controls" image:nil identifier:nil handler:^(UIAction *a) {
@@ -207,8 +225,33 @@ static BOOL TKTouchControlsShown(void) {
         [weakSelf updateControlsMenu];
     }];
     toggle.state=TKTouchControlsShown()?UIMenuElementStateOn:UIMenuElementStateOff;
-    _controlsItem.menu=[UIMenu menuWithTitle:@"Keyboard and touch-trackpad buttons over the game, from its next start"
-        children:@[toggle]];
+    UIMenu *controls=[UIMenu menuWithTitle:@"Movement stick, touch trackpad and keyboard buttons over the game, from its next start"
+        image:nil identifier:nil options:UIMenuOptionsDisplayInline children:@[toggle]];
+    // Off: a mouse's pointer follows its raw motion at a constant speed, and
+    // the touch trackpad's pointer no longer speeds up with the finger.
+    UIAction *acceleration=[UIAction actionWithTitle:@"Pointer Acceleration" image:nil identifier:nil handler:^(UIAction *a) {
+        (void)a;
+        [NSUserDefaults.standardUserDefaults setBool:!TKPointerAccelerated() forKey:TKPointerAccelerationKey];
+        [weakSelf updateControlsMenu];
+    }];
+    acceleration.state=TKPointerAccelerated()?UIMenuElementStateOn:UIMenuElementStateOff;
+    NSMutableArray<UIMenuElement *> *pointer=[NSMutableArray arrayWithObject:acceleration];
+    if (!TKPointerAccelerated()) {
+        NSMutableArray<UIAction *> *speeds=[NSMutableArray new];
+        for (NSNumber *speed in @[@0.5,@0.75,@1,@1.5,@2]) {
+            UIAction *choice=[UIAction actionWithTitle:[NSString stringWithFormat:@"%@×",speed] image:nil identifier:nil handler:^(UIAction *a) {
+                (void)a;
+                [NSUserDefaults.standardUserDefaults setDouble:speed.doubleValue forKey:TKPointerSpeedKey];
+                [weakSelf updateControlsMenu];
+            }];
+            choice.state=speed.doubleValue==TKPointerSpeed()?UIMenuElementStateOn:UIMenuElementStateOff;
+            [speeds addObject:choice];
+        }
+        [pointer addObject:[UIMenu menuWithTitle:@"Mouse Pointer Speed" children:speeds]];
+    }
+    UIMenu *pointerMenu=[UIMenu menuWithTitle:@"Off: a mouse or the touch trackpad moves the pointer at a constant speed, from the game's next start. With a mouse, the game must fill the screen."
+        image:nil identifier:nil options:UIMenuOptionsDisplayInline children:pointer];
+    _controlsItem.menu=[UIMenu menuWithChildren:@[controls,pointerMenu]];
 }
 
 - (void)showDetailsOfApp:(TKApp *)app from:(UIView *)view {
@@ -270,6 +313,222 @@ static BOOL TKTouchControlsShown(void) {
     sheet.popoverPresentationController.sourceView=view;
     sheet.popoverPresentationController.sourceRect=view.bounds;
     [self presentViewController:sheet animated:YES completion:nil];
+}
+
+// The + button adds an app from Files. With a profile whose application can
+// be downloaded and is not here yet, it is a menu that offers that too.
+- (void)updateAddMenu {
+    NSArray<NSDictionary *> *offers=_library.downloadableProfiles;
+    // A bar button with an action shows its menu only on a long press: with
+    // something to offer, a tap opens the menu.
+    _addItem.action=offers.count ? nil : @selector(importApp);
+    if (!offers.count) { _addItem.menu=nil; return; }
+    __weak TKLibraryViewController *weakSelf=self;
+    NSMutableArray<UIMenuElement *> *items=[NSMutableArray arrayWithObject:
+        [UIAction actionWithTitle:@"Add from Files…" image:[UIImage systemImageNamed:@"folder"] identifier:nil handler:^(UIAction *a) {
+            (void)a; [weakSelf importApp];
+        }]];
+    for (NSDictionary *profile in offers) {
+        [items addObject:[UIAction actionWithTitle:[NSString stringWithFormat:@"Download %@… (Experimental)",profile[@"name"]]
+            image:[UIImage systemImageNamed:@"arrow.down.circle"] identifier:nil handler:^(UIAction *a) {
+                (void)a; [weakSelf offerDownloadOfProfile:profile];
+            }]];
+    }
+    _addItem.menu=[UIMenu menuWithChildren:items];
+}
+
+#pragma mark Download (experimental)
+
+// Development runs (docs/BUILDING.md): --download-profile=<id> starts that
+// profile's download as the menu would after its questions, once, when the
+// library appears; --download-region=<id> and --download-locale=<locale>
+// answer the questions of a download that asks them. For a download with a
+// runtime archive, --download-runtime-url=<https address>,
+// --download-runtime-sha256= and --download-runtime-size= each replace that
+// value of the profile for this launch: an archive that is not published yet.
+// --download-root=<folder> puts such a download under another top folder of
+// Documents, also when the application is in place: a trial beside it.
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    static BOOL asked;
+    if (asked) return;
+    asked=YES;
+    NSString *wanted=nil, *region=nil, *locale=nil, *root=nil;
+    NSMutableDictionary *archive=[NSMutableDictionary new];
+    for (NSString *argument in NSProcessInfo.processInfo.arguments) {
+        if ([argument hasPrefix:@"--download-profile="]) wanted=[argument substringFromIndex:19];
+        if ([argument hasPrefix:@"--download-region="]) region=[argument substringFromIndex:18];
+        if ([argument hasPrefix:@"--download-locale="]) locale=[argument substringFromIndex:18];
+        if ([argument hasPrefix:@"--download-root="]) root=[argument substringFromIndex:16];
+        if ([argument hasPrefix:@"--download-runtime-url="]) archive[@"url"]=[argument substringFromIndex:23];
+        if ([argument hasPrefix:@"--download-runtime-sha256="]) archive[@"sha256"]=[argument substringFromIndex:26];
+        if ([argument hasPrefix:@"--download-runtime-size="]) archive[@"size"]=@(strtoull([argument substringFromIndex:24].UTF8String,NULL,10));
+    }
+    if (!wanted) return;
+    for (NSDictionary *profile in root ? _library.downloadProfiles : _library.downloadableProfiles) {
+        if (![profile[@"id"] isEqual:wanted]) continue;
+        NSString *top=profile[@"download"][@"root"];
+        if (root && (![top isKindOfClass:NSString.class] || !root.length || [root containsString:@"/"] || [root hasPrefix:@"."] || [root isEqual:top])) continue;
+        BOOL asks=[TKGameDownload regionsOfConfiguration:profile[@"download"]].count>0;
+        if (asks && (!region || !locale)) continue;
+        NSMutableDictionary *changed=[profile mutableCopy];
+        if (archive.count && [profile[@"download"][@"runtime"] isKindOfClass:NSDictionary.class]) {
+            NSMutableDictionary *block=[profile[@"download"] mutableCopy], *runtime=[block[@"runtime"] mutableCopy];
+            [runtime addEntriesFromDictionary:archive];
+            block[@"runtime"]=runtime; changed[@"download"]=block;
+        }
+        if (root) {
+            // The profile's folders are inside its top folder (the downloader checks that).
+            NSMutableDictionary *block=[changed[@"download"] mutableCopy];
+            block[@"root"]=root; changed[@"download"]=block;
+            for (NSString *key in @[@"runtime",@"workingDirectory"]) {
+                NSString *path=profile[key];
+                if ([path hasPrefix:[top stringByAppendingString:@"/"]]) changed[key]=[root stringByAppendingString:[path substringFromIndex:top.length]];
+            }
+        }
+        // Values the downloader does not accept start nothing.
+        [self downloadProfile:changed region:asks ? region : nil locale:asks ? locale : nil];
+    }
+}
+
+// What is fetched and from whom, with the profile's own notice about the
+// application; then the region and language the game is set up for, when
+// the download asks for them.
+- (void)offerDownloadOfProfile:(NSDictionary *)profile {
+    BOOL steam=[profile[@"download"][@"service"] isEqual:@"steam"];
+    NSString *risk=[profile[@"setup"] isKindOfClass:NSDictionary.class] && [profile[@"setup"][@"risk"] isKindOfClass:NSDictionary.class]
+        ? profile[@"setup"][@"risk"][@"summary"] : nil;
+    NSMutableString *message=[NSMutableString stringWithFormat:@"Tolkara fetches %@'s own application from its publisher's servers, into Tolkara's folder on this device. "
+        @"Tolkara does not host or change it. The game then downloads its data itself when it first starts, which can be tens of gigabytes: "
+        @"use Wi-Fi and keep Tolkara open.\n\nThis is experimental.",profile[@"name"]];
+    if (steam) message=[@"Steam is Valve's. Tolkara fetches it from Valve's public update server, into Tolkara's folder on this device, "
+        @"and checks each file against Valve's own list. The Windows runtime Steam runs in (Wine and FEX, both open source) comes from Tolkara's release page. "
+        @"Nothing of Steam is hosted by Tolkara or included in it. You sign in inside Steam.\n\n"
+        @"About 2 GB of free space is needed: use Wi-Fi and keep Tolkara open.\n\nThis is experimental." mutableCopy];
+    if ([risk isKindOfClass:NSString.class] && risk.length) [message appendFormat:@"\n\n%@",risk];
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"Download %@?",profile[@"name"]]
+        message:message preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Continue" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        (void)a;
+        if ([TKGameDownload regionsOfConfiguration:profile[@"download"]].count) [self chooseRegionForProfile:profile];
+        else [self downloadProfile:profile region:nil locale:nil];
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+- (void)chooseRegionForProfile:(NSDictionary *)profile {
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"Region" message:@"The region your account plays in."
+        preferredStyle:UIAlertControllerStyleAlert];
+    for (NSDictionary<NSString *,NSString *> *region in [TKGameDownload regionsOfConfiguration:profile[@"download"]]) {
+        [alert addAction:[UIAlertAction actionWithTitle:region[@"name"] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+            (void)a; [self chooseLanguageForProfile:profile region:region[@"id"]];
+        }]];
+    }
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+- (void)chooseLanguageForProfile:(NSDictionary *)profile region:(NSString *)region {
+    NSArray<NSString *> *locales=[TKGameDownload localesOfConfiguration:profile[@"download"]];
+    if (locales.count==1) { [self downloadProfile:profile region:region locale:locales[0]]; return; }
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"Language" message:@"The game's text and speech."
+        preferredStyle:UIAlertControllerStyleAlert];
+    for (NSString *locale in locales) {
+        // "enUS" as "English (United States)", in the device's language.
+        NSString *identifier=[NSString stringWithFormat:@"%@_%@",[locale substringToIndex:2],[locale substringFromIndex:2]];
+        NSString *name=[NSLocale.currentLocale localizedStringForLocaleIdentifier:identifier]?:locale;
+        [alert addAction:[UIAlertAction actionWithTitle:name style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+            (void)a; [self downloadProfile:profile region:region locale:locale];
+        }]];
+    }
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+- (void)downloadProfile:(NSDictionary *)profile region:(NSString *)region locale:(NSString *)locale {
+    NSString *documents=[NSHomeDirectory() stringByAppendingPathComponent:@"Documents"];
+    // Room for the application; a game's own data needs far more and says so
+    // itself. Steam comes with its Windows runtime, as an archive and unpacked.
+    unsigned long long needed=[profile[@"download"][@"service"] isEqual:@"steam"] ? 3 : 1;
+    NSNumber *room=[[NSURL fileURLWithPath:documents] resourceValuesForKeys:@[NSURLVolumeAvailableCapacityForImportantUsageKey] error:NULL][NSURLVolumeAvailableCapacityForImportantUsageKey];
+    if (room && room.unsignedLongLongValue<(needed<<30)) {
+        [self showError:[NSError errorWithDomain:TKGameDownloadErrorDomain code:2 userInfo:@{NSLocalizedDescriptionKey:
+            [NSString stringWithFormat:@"There is less than %llu GB free on this device.",needed]}] title:@"Cannot Download"];
+        return;
+    }
+    TKGameDownload *download=[[TKGameDownload alloc] initWithConfiguration:profile[@"download"] documents:documents
+        workingDirectory:profile[@"workingDirectory"] runtime:profile[@"runtime"] region:region locale:locale];
+    if (!download || _download) return;
+    _download=download;
+    _downloadAlert=[UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"Downloading %@",profile[@"name"]]
+        message:@"Starting…\n\n" preferredStyle:UIAlertControllerStyleAlert];
+    [_downloadAlert addAction:[UIAlertAction actionWithTitle:@"Stop" style:UIAlertActionStyleCancel handler:^(UIAlertAction *a) {
+        (void)a; [download cancel];
+    }]];
+    _downloadBar=[[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
+    _downloadBar.translatesAutoresizingMaskIntoConstraints=NO;
+    [_downloadAlert.view addSubview:_downloadBar];
+    [NSLayoutConstraint activateConstraints:@[
+        [_downloadBar.leadingAnchor constraintEqualToAnchor:_downloadAlert.view.leadingAnchor constant:20],
+        [_downloadBar.trailingAnchor constraintEqualToAnchor:_downloadAlert.view.trailingAnchor constant:-20],
+        [_downloadBar.bottomAnchor constraintEqualToAnchor:_downloadAlert.view.bottomAnchor constant:-64]]];
+    [self presentViewController:_downloadAlert animated:YES completion:nil];
+    __weak TKLibraryViewController *weakSelf=self;
+    download.progress=^(NSString *phase,double fraction) {
+        dispatch_async(dispatch_get_main_queue(),^{
+            TKLibraryViewController *controller=weakSelf;
+            if (!controller || controller->_download!=download) return;
+            controller->_downloadAlert.message=[phase stringByAppendingString:@"\n\n"];
+            controller->_downloadBar.progress=(float)fraction;
+        });
+    };
+    // A long download: the screen stays on, as it does while a game runs.
+    UIApplication.sharedApplication.idleTimerDisabled=YES;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+        NSError *error=nil;
+        BOOL done=[download run:&error];
+        dispatch_async(dispatch_get_main_queue(),^{
+            UIApplication.sharedApplication.idleTimerDisabled=NO;
+            UIAlertController *alert=self->_downloadAlert;
+            self->_download=nil; self->_downloadAlert=nil; self->_downloadBar=nil;
+            BOOL stopped=[error.domain isEqual:NSCocoaErrorDomain] && error.code==NSUserCancelledError;
+            void (^after)(void)=^{
+                if (done) [self addDownloadedProfile:profile];
+                else { [self refresh]; if (!stopped) [self showError:error title:@"Download Failed"]; }
+            };
+            if (alert.presentingViewController) [alert dismissViewControllerAnimated:YES completion:after]; else after();
+        });
+    });
+}
+
+// The downloaded application goes into the library at once, also when its
+// profile was removed from the library before, and the user is told under
+// which name: an entry that already pointed at this folder is the one.
+- (void)addDownloadedProfile:(NSDictionary *)profile {
+    NSString *path=[[NSHomeDirectory() stringByAppendingPathComponent:@"Documents"]
+        stringByAppendingPathComponent:[TKAppLibrary executableOfProfile:profile]];
+    _importing=YES;
+    [self reload];
+    dispatch_async(_queue,^{
+        NSError *error=nil;
+        TKApp *app=[self->_library importExecutable:path copy:NO error:&error];
+        [self->_library discover];
+        dispatch_async(dispatch_get_main_queue(),^{
+            self->_importing=NO;
+            [self reload];
+            if (!app) { [self showError:error title:@"Downloaded, but Not Added"]; return; }
+            NSUInteger row=[self->_apps indexOfObjectPassingTest:^BOOL(TKApp *item, NSUInteger index, BOOL *stop) {
+                (void)index; (void)stop; return [item.identifier isEqual:app.identifier]; }];
+            if (row!=NSNotFound)
+                [self.tableView selectRowAtIndexPath:[NSIndexPath indexPathForRow:(NSInteger)row inSection:self.hasNotice ? 1 : 0]
+                    animated:YES scrollPosition:UITableViewScrollPositionMiddle];
+            UIAlertController *alert=[UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"%@ Is in Your Library",app.name]
+                message:[profile[@"download"][@"service"] isEqual:@"steam"]
+                    ? @"Tap it to start. Steam finishes its own installation at the first start, then asks you to sign in."
+                    : @"Tap it to start. The game downloads its data when it first starts and shows its progress; keep Tolkara open until it is done."
+                preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+            [self presentViewController:alert animated:YES completion:nil];
+        });
+    });
 }
 
 - (void)importApp {

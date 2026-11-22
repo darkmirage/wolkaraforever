@@ -85,7 +85,10 @@ Marker files in an adapter's directory change that: `standalone` replaces a
 library iOS has instead of re-exporting it, `absent` presents the library as
 unavailable (the runtime neither opens it nor binds anything to it), and
 `experimental` keeps the directory out of every build that does not name it in
-`TOLKARA_EXPERIMENTAL_ADAPTERS`.
+`TOLKARA_EXPERIMENTAL_ADAPTERS`. In a generic build, `opt-in` makes the runtime
+use the adapter only for an application whose profile names it in the
+`TOLKARA_ADAPTERS` environment variable (listed in `Guest/opt-in.json`); every
+other application gets the iOS library.
 
 A generic build (`NATIVE_GUEST_SHIMS=GENERIC`) is made for no particular
 executable: one adapter per hand-written `translation/<Framework>/` and no import
@@ -118,6 +121,7 @@ Hand-written areas today:
   trust roots exported from the builder's own Mac at build time, a keychain
   subset, and the legacy CDSA crypto calls on CommonCrypto).
 - Experimental and opt-in (`TOLKARA_EXPERIMENTAL_ADAPTERS`): **GameController**
+  (also opt-in per application: only Cyberpunk 2077's profile uses it)
   as a Mac with no controllers, and **MetalFX** presented as absent. Both work
   around one game's crashes and are not yet validated on a device.
 - Experimental launch arguments, each off by default and not yet validated on
@@ -237,8 +241,14 @@ Development checks, the Developer service route controls and the runtime logs
 are in a separate Diagnostics menu. Checks that load compatibility libraries or may be
 terminated by the system end the session: iPadOS allows one guest startup per
 process, so Tolkara must be reopened before starting an app. An app that
-closes cleanly ends the Tolkara process after a short note, making the next
-tap on the icon a fresh library. Launch arguments
+closes ends the Tolkara process after a short note, making the next tap on
+the icon a fresh library; that includes an app whose `main` returns a nonzero
+code, which the note then shows. The end is bounded (`runtime/ProcessEnd.c`):
+`exit()` runs the application's exit handlers while its audio, Metal and
+network threads are still alive, and one that waits for such a thread would
+otherwise leave a dead screen, so after 3 seconds the process ends anyway
+(30 while a clean exit uploads Steam Cloud saves, which itself waits at most
+20). `-[NSApplication terminate:]` ends the process the same way. Launch arguments
 used by `tools/` keep their plain status screen; `--app=<identifier>` selects a
 library app for `--native-startup` and friends.
 

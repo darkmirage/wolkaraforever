@@ -13,12 +13,17 @@
 # Applies to: tests/test_appkit_views.m
 # Upstream: candidate.
 #
+# Rebased onto Tolkara edc3628: test context only - upstream added a finger-hover test and a
+# stick test block around these assertions (0073 removes the stick block).
+#
+diff --git a/tests/test_appkit_views.m b/tests/test_appkit_views.m
+index aa54d48..5e51018 100644
 --- a/tests/test_appkit_views.m
 +++ b/tests/test_appkit_views.m
-@@ -4,6 +4,11 @@
- #import "AppKit.h"
- #import "TouchControls.h"
- #include <assert.h>
+@@ -12,6 +12,11 @@ extern void AKSetWindowProcess(NSWindow *window,size_t slot);
+ @interface NSWindow (OrderingTest)
+ - (void)ak_order:(NSInteger)mode relativeTo:(NSInteger)number;
+ @end
 +// The host view's trackpad switch: the touch controls call it when the user turns the
 +// trackpad on or off, and this suite drives it directly to cover both interface modes.
 +@interface NSObject (FixtureTrackpadMode)
@@ -27,7 +32,7 @@
  @interface NSScreen (FixtureBackingCoordinates)
  - (CGRect)convertRectToBacking:(CGRect)rect;
  - (CGRect)convertRectFromBacking:(CGRect)rect;
-@@ -173,12 +178,21 @@
+@@ -308,9 +313,12 @@ int main(void) { @autoreleasepool {
      // wolkaraforever/Touch/TouchControls.m and docs/TOUCH_INPUT.md.
      UIView *plainHost=[NSClassFromString(@"AKHostView") new];
      assert(AKTouchControls.enabled && !![plainHost valueForKey:@"_touchControls"]);
@@ -43,6 +48,10 @@
      [defaults setBool:NO forKey:AKTouchControlsDefaultsKey];
      plainHost=[NSClassFromString(@"AKHostView") new];
      assert(![plainHost valueForKey:@"_touchControls"] && !plainHost.multipleTouchEnabled);
+@@ -336,6 +344,12 @@ int main(void) { @autoreleasepool {
+     [plainHost touchesEnded:[NSSet setWithObject:(UITouch *)finger] withEvent:(UIEvent *)fingerEvent];
+     AKMouseSetCaptured(false);
+     while([NSApp nextEventMatchingMask:UINT64_MAX untilDate:NSDate.distantPast inMode:NSDefaultRunLoopMode dequeue:YES]) {}
 +    // Mobile (WolkaraForeverInterfaceModeV1 = ios): the direct gestures need a second finger
 +    // for their pinch, so the host takes several fingers whether or not the trackpad is on.
 +    [defaults setObject:@"ios" forKey:@"WolkaraForeverInterfaceModeV1"];
@@ -52,12 +61,10 @@
      [defaults setBool:YES forKey:AKTouchControlsDefaultsKey];
      id host=[NSClassFromString(@"AKHostView") new];
      [host setValue:window forKey:@"nsWindow"];
-@@ -276,7 +290,17 @@
-     [host touchButton:0 pressed:YES]; [host touchButton:0 pressed:NO];
-     assert(next_input().clickCount == 2); (void)next_input();
+@@ -676,6 +690,15 @@ int main(void) { @autoreleasepool {
+     assert(![NSApp nextEventMatchingMask:UINT64_MAX untilDate:NSDate.distantPast inMode:NSDefaultRunLoopMode dequeue:NO]);
      controls.trackpadEnabled = NO;
-+    // Standard: the trackpad off is single-touch again, as it has always been.
-     assert(!hostView.multipleTouchEnabled);
+     assert(!controls.stickEnabled && !hostView.multipleTouchEnabled);
 +    // Mobile: several fingers in both modes, and the pinch recognizer is what follows the
 +    // trackpad rather than multi-touch itself.
 +    [defaults setObject:@"ios" forKey:@"WolkaraForeverInterfaceModeV1"];

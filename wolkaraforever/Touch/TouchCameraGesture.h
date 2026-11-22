@@ -1,11 +1,11 @@
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
-#import "TouchTrackpad.h"
+#import "LayerTrackpad.h"
 
 // The direct touch camera, as one gesture that has a beginning, an end, and a rule for being
 // taken away.
 //
-// The platform's trackpad state machine (`TouchTrackpad.c`, upstream's, unchanged) turns finger
+// The trackpad state machine (`LayerTrackpad.c`, the platform's as of Tolkara 00a8501) turns finger
 // centroids into a pointer, a drag or a scroll. What it cannot know is anything about this
 // app's lifecycle, and that is what used to go wrong: a drag whose touch vanished - the panel
 // opening over it, the app going away, a rotation, a physical controller arriving - stayed
@@ -25,11 +25,14 @@
 //
 // It logs nothing else: no coordinates, no trail, no pointer position, and nothing about the
 // game.
+//
+// The file and its update function carry "Gesture" because the platform has a camera of its own,
+// TouchCamera.h and TouchCamera.c, compiled into the same library with its own AKTouchCameraUpdate.
 
 NS_ASSUME_NONNULL_BEGIN
 
 typedef struct AKTouchCameraGesture {
-    AKTrackpad pad;
+    AKLayerTrackpad pad;
     // The surface the centroid was measured on, in points. Only used for the jump limit.
     double width, height;
     // The tap threshold has been reported for this gesture.
@@ -44,17 +47,17 @@ typedef struct AKTouchCameraGesture {
 /// "settings", "controller", "keyboard", "cancelled". `emit` may be NULL when there is nothing
 /// left to tell (teardown), and then nothing is emitted or logged.
 void AKTouchCameraReset(AKTouchCameraGesture *camera, NSString *reason,
-                        AKTrackpadEmit _Nullable emit, void *_Nullable context);
+                        AKLayerTrackpadEmit _Nullable emit, void *_Nullable context);
 
 /// One frame of direct touch: the finger count and centroid UIKit reported. `surface` is the
 /// size the centroid was measured in. Calls the platform state machine, and emits through
 /// `emit` exactly as it does.
-void AKTouchCameraUpdate(AKTouchCameraGesture *camera, unsigned fingers, double x, double y,
-                         double time, CGSize surface, AKTrackpadEmit emit, void *context);
+void AKTouchCameraGestureUpdate(AKTouchCameraGesture *camera, unsigned fingers, double x, double y,
+                                  double time, CGSize surface, AKLayerTrackpadEmit emit, void *context);
 
 /// The overlay's hold timer. Answers YES when this call is what started a drag (a press went
 /// out), so the caller can log or react to it.
-BOOL AKTouchCameraHold(AKTouchCameraGesture *camera, double time, AKTrackpadEmit emit, void *context);
+BOOL AKTouchCameraHold(AKTouchCameraGesture *camera, double time, AKLayerTrackpadEmit emit, void *context);
 
 /// Whether a gesture is in progress (any finger down, held or not).
 BOOL AKTouchCameraIsActive(const AKTouchCameraGesture *camera);

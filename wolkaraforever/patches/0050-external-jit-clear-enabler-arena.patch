@@ -31,12 +31,15 @@
 #
 # Applies to: runtime/NativeGuest.m, tests/test_native_memory.c
 # Upstream: candidate.
-
+#
+# Rebased onto Tolkara edc3628: test context only - upstream added a bounded-address test
+# just above this one.
+#
 diff --git a/runtime/NativeGuest.m b/runtime/NativeGuest.m
-index a306b44..07bd17c 100644
+index 4c7a8bf..03db304 100644
 --- a/runtime/NativeGuest.m
 +++ b/runtime/NativeGuest.m
-@@ -1724,7 +1724,7 @@ bool ng_initialize(const char *path, const char *frameworks, const char *library
+@@ -2113,7 +2113,7 @@ bool ng_initialize(const char *path, const char *frameworks, const char *library
          LOG("[native] the arena reserved earlier (%zu bytes) is not used; given back\n",reserved_arena.size);
          nc_destroy(&reserved_arena);
      }
@@ -45,8 +48,8 @@ index a306b44..07bd17c 100644
      startup_begin(signed_backend?"mapping the signed page container":"preparing execution memory",0);
      if (signed_backend)
          arena_ready=signed_image_prepare(guest.base+total,error,sizeof error);
-@@ -1733,17 +1733,25 @@ bool ng_initialize(const char *path, const char *frameworks, const char *library
-         arena_ready=nc_create_managed(&guest.arena,total,TKPrepareLocalArena,NULL,&local_quarantine);
+@@ -2153,17 +2153,25 @@ bool ng_initialize(const char *path, const char *frameworks, const char *library
+     }
  #endif
      else if(take_reserved) {
 -        guest.arena=reserved_arena; reserved_arena=(NativeCodeMemory){0}; arena_ready=true;
@@ -74,12 +77,12 @@ index a306b44..07bd17c 100644
      LOG("[native] arena protection %#x\n",hd_protection(guest.arena.executable));
      // Whichever route prepared it: nothing attached, really executable.
 diff --git a/tests/test_native_memory.c b/tests/test_native_memory.c
-index f784a20..b4e4004 100644
+index 64259bc..4d276e1 100644
 --- a/tests/test_native_memory.c
 +++ b/tests/test_native_memory.c
-@@ -101,6 +101,24 @@ int main(void) {
-     // Adopted, the region is ours: teardown unmaps it with the alias.
-     assert(!mapped(foreign) && !mapped(alias));
+@@ -115,6 +115,24 @@ int main(void) {
+     assert((uintptr_t)bounded.executable+bounded.size<=((uintptr_t)1<<36));
+     nc_destroy(&bounded);
  
 +    // An enabler's region is not zero-filled: preparing a page writes into it
 +    // (StikDebug stores one byte, 0x69, at the start of every page). Clearing it
@@ -102,7 +105,7 @@ index f784a20..b4e4004 100644
      unsigned old_calls=calls;
      assert(!nc_create_managed(&memory,page,uncertain_pages,&calls,&quarantine) && errno==EINVAL);
      assert(calls==old_calls); // No second helper attempt or allocation.
-@@ -120,5 +138,5 @@ int main(void) {
+@@ -135,5 +153,5 @@ int main(void) {
      assert(!nc_create_managed(&large,(size_t)NC_MAX_ARENA+page,accept_without_reading,NULL,&spare) && errno==EINVAL);
      assert(!large.executable && !large.writable);
      puts("PASS: native alias coherence, bounds, rejection cleanup, uncertain quarantine, write/retry denial (no generated code executed)");

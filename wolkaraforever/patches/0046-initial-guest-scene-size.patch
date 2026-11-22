@@ -1,20 +1,46 @@
 # WolkaraForever layer patch 0046: size the first guest surface from its UIWindowScene.
 # Duo evidence: UIScreen supplied 678x466 while the active scene was 951x669.
+#
+# Rebased onto Tolkara edc3628: upstream's window is an AKGuestUIWindow whose root view is
+# an AKHostContainerView holding the host view. loadView sizes the container (and so the host
+# inside it) from NSScreen's frame, the scene-sized seed then sizes both from the scene, and
+# the test checks the container's size and the host view's scale.
+#
+diff --git a/tests/test_appkit_views.m b/tests/test_appkit_views.m
+index 855f949..db37594 100644
+--- a/tests/test_appkit_views.m
++++ b/tests/test_appkit_views.m
+@@ -809,6 +809,12 @@ int main(void) { @autoreleasepool {
+         AKSetGuestDisplayGeometry(phoneSizes[i],120);
+         NSScreen *screen=NSScreen.mainScreen;
+         assert(CGSizeEqualToSize(screen.frame.size,phoneSizes[i]));
++        UIViewController *host=[NSClassFromString(@"AKHostViewController") new];
++        assert(host && CGSizeEqualToSize(host.view.bounds.size,phoneSizes[i]));
++        // The view is the container; the game draws in the host view inside it.
++        UIView *gameHostView=[host valueForKey:@"host"];
++        assert(gameHostView && CGSizeEqualToSize(gameHostView.bounds.size,phoneSizes[i]));
++        assert(gameHostView.contentScaleFactor==screen.backingScaleFactor);
+         assert(screen.backingScaleFactor==other.backingScaleFactor);
+         CGRect points=CGRectMake(12,24,100,60);
+         CGRect pixels=[screen convertRectToBacking:points];
+diff --git a/translation/AppKit/AppKit.m b/translation/AppKit/AppKit.m
+index 3d6ed0f..53b2197 100644
 --- a/translation/AppKit/AppKit.m
 +++ b/translation/AppKit/AppKit.m
-@@ -721,7 +721,7 @@
- @end
- @implementation AKHostViewController
+@@ -1034,7 +1034,8 @@ static BOOL AKIsRight(UIEvent *ev) { return (ev.buttonMask & UIEventButtonMaskSe
+ // The game's view sits in a container that also holds the on-screen controls,
+ // so that their side columns can take screen space from the game.
  - (void)loadView {
--    self.view = [[AKHostView alloc] initWithFrame:UIScreen.mainScreen.bounds];
-+    self.view = [[AKHostView alloc] initWithFrame:NSScreen.mainScreen.frame];
-     self.view.backgroundColor = UIColor.blackColor;
-     // What the guest actually derives its surface from. NSScreen's answer alone
-     // changes nothing: the drawable follows this view. One pixel per point, so the
-@@ -924,9 +924,15 @@
+-    AKHostContainerView *container = [[AKHostContainerView alloc] initWithFrame:UIScreen.mainScreen.bounds];
++    // The guest's display, not UIScreen's: a resizable phone's scene can be larger.
++    AKHostContainerView *container = [[AKHostContainerView alloc] initWithFrame:NSScreen.mainScreen.frame];
+     container.backgroundColor = UIColor.blackColor;
+     _host = [[AKHostView alloc] initWithFrame:container.bounds];
+     _host.backgroundColor = UIColor.blackColor;
+@@ -1298,10 +1299,18 @@ static void logLayer(CALayer *layer,unsigned depth) {
              if ([s isKindOfClass:UIWindowScene.class]) { scene = (UIWindowScene *)s; break; }
-         if (!scene) { AKLog(@"makeKeyAndOrderFront: no UIWindowScene connected"); return; }
-         _uiWindow = [[UIWindow alloc] initWithWindowScene:scene];
+         if (!scene) { AKLog(@"show window: no UIWindowScene connected"); return NO; }
+         _uiWindow = [[AKGuestUIWindow alloc] initWithWindowScene:scene];
 +        // A resizable phone can have a scene larger than UIScreen.bounds. Seed
 +        // the display before the first content attachment: some clients allocate
 +        // their drawable on that first resize and never revisit it afterwards.
@@ -22,21 +48,12 @@
 +        AKSetGuestDisplayGeometry(_uiWindow.bounds.size,scene.screen.maximumFramesPerSecond);
          AKHostViewController *vc = [AKHostViewController new];
          _uiWindow.rootViewController = vc;
--        _host = (AKHostView *)vc.view; _host.nsWindow = self;
-+        _host = (AKHostView *)vc.view;
-+        _host.frame=_uiWindow.bounds; _host.nsWindow = self;
+         [vc loadViewIfNeeded];
+-        _host = vc.host; _host.nsWindow = self;
++        // The container and the game's view start at the scene's size, not the
++        // screen's; the container's layout later takes the controls' columns.
++        vc.view.frame=_uiWindow.bounds;
++        _host = vc.host; _host.frame=vc.view.bounds; _host.nsWindow = self;
+         [self ak_applyWindowAppearance];
          if (_contentView) [self ak_attach];
-     }
-     [_uiWindow makeKeyAndVisible];
---- a/tests/test_appkit_views.m
-+++ b/tests/test_appkit_views.m
-@@ -309,6 +309,9 @@
-         AKSetGuestDisplayGeometry(phoneSizes[i],120);
-         NSScreen *screen=NSScreen.mainScreen;
-         assert(CGSizeEqualToSize(screen.frame.size,phoneSizes[i]));
-+        UIViewController *host=[NSClassFromString(@"AKHostViewController") new];
-+        assert(host && CGSizeEqualToSize(host.view.bounds.size,phoneSizes[i]));
-+        assert(host.view.contentScaleFactor==screen.backingScaleFactor);
-         assert(screen.backingScaleFactor==other.backingScaleFactor);
-         CGRect points=CGRectMake(12,24,100,60);
-         CGRect pixels=[screen convertRectToBacking:points];
+         if(AKWindowInputDiagnostics()) {

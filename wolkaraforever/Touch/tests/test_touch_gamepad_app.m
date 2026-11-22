@@ -4,7 +4,7 @@
 #import "../translation/AppKit/InterfaceMode.h"
 #import "../translation/AppKit/TouchGamepad.h"
 #import "../translation/AppKit/TouchGamepadLayout.h"
-#import "../translation/AppKit/TouchCamera.h"
+#import "../translation/AppKit/TouchCameraGesture.h"
 #import "../translation/AppKit/ControllerPointer.h"
 #import "../translation/AppKit/TouchControllerLog.h"
 #import "../translation/AppKit/TouchHaptics.h"
@@ -539,13 +539,13 @@ static void TestLayoutSchema(void) {
     puts("TOUCH_LAYOUT_SCHEMA_PASS: an old dictionary migrates to Full with everything it carried, a newer one is never rewritten, an unknown mode is Full, Simple keeps its own positions and turning it off deletes nothing, and only buttons may become ability zones.");
 }
 // --- the direct camera ----------------------------------------------------------
-static void AKFixtureCameraEmit(void *context, AKTrackpadAction action, double x, double y, unsigned button) {
+static void AKFixtureCameraEmit(void *context, AKLayerTrackpadAction action, double x, double y, unsigned button) {
     NSMutableArray<NSString *> *events = (__bridge NSMutableArray<NSString *> *)context;
     switch (action) {
-        case AKTrackpadDown: [events addObject:[NSString stringWithFormat:@"down%u",button]]; break;
-        case AKTrackpadUp: [events addObject:[NSString stringWithFormat:@"up%u",button]]; break;
-        case AKTrackpadMove: [events addObject:[NSString stringWithFormat:@"move%.1f,%.1f",x,y]]; break;
-        case AKTrackpadScroll: [events addObject:[NSString stringWithFormat:@"scroll%.1f,%.1f",x,y]]; break;
+        case AKLayerTrackpadDown: [events addObject:[NSString stringWithFormat:@"down%u",button]]; break;
+        case AKLayerTrackpadUp: [events addObject:[NSString stringWithFormat:@"up%u",button]]; break;
+        case AKLayerTrackpadMove: [events addObject:[NSString stringWithFormat:@"move%.1f,%.1f",x,y]]; break;
+        case AKLayerTrackpadScroll: [events addObject:[NSString stringWithFormat:@"scroll%.1f,%.1f",x,y]]; break;
     }
 }
 // The camera is a gesture with an end. Every one of these traces is a sequence UIKit can
@@ -557,39 +557,39 @@ static void TestDirectCamera(void) {
     CGSize surface = CGSizeMake(1000,500);
     AKFixtureBeginLog();
     // A tap where the finger was: one press, one release, no motion.
-    AKTouchCameraUpdate(&camera,1,100,100,1,surface,AKFixtureCameraEmit,context);
-    AKTouchCameraUpdate(&camera,0,0,0,1.1,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraGestureUpdate(&camera,1,100,100,1,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraGestureUpdate(&camera,0,0,0,1.1,surface,AKFixtureCameraEmit,context);
     assert(([events isEqual:@[@"down0",@"up0"]]));
     assert(!AKTouchCameraIsActive(&camera));
     // Hold, then drag: one press, the motion, one release. The threshold hand-off is reported
     // once, and only once.
     [events removeAllObjects];
-    AKTouchCameraUpdate(&camera,1,100,100,2,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraGestureUpdate(&camera,1,100,100,2,surface,AKFixtureCameraEmit,context);
     assert(AKTouchCameraHold(&camera,2.5,AKFixtureCameraEmit,context));
     assert(!AKTouchCameraHold(&camera,2.6,AKFixtureCameraEmit,context)); // already dragging
-    AKTouchCameraUpdate(&camera,1,110,104,2.6,surface,AKFixtureCameraEmit,context);
-    AKTouchCameraUpdate(&camera,0,0,0,2.7,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraGestureUpdate(&camera,1,110,104,2.6,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraGestureUpdate(&camera,0,0,0,2.7,surface,AKFixtureCameraEmit,context);
     assert(([events isEqual:@[@"down0",@"move10.0,4.0",@"up0"]]));
     assert(AKFixtureLogCount(@"event=threshold outcome=handoff") == 1);
     // A centroid jump is a new gesture, not a drag: the held button is released exactly once,
     // nothing is moved by the jump, and the camera answers the very next movement - which is
     // what makes a recentered pointer survivable.
     [events removeAllObjects];
-    AKTouchCameraUpdate(&camera,1,100,100,3,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraGestureUpdate(&camera,1,100,100,3,surface,AKFixtureCameraEmit,context);
     assert(AKTouchCameraHold(&camera,3.5,AKFixtureCameraEmit,context));
-    AKTouchCameraUpdate(&camera,1,900,400,3.6,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraGestureUpdate(&camera,1,900,400,3.6,surface,AKFixtureCameraEmit,context);
     assert(([events isEqual:@[@"down0",@"up0"]]));
     assert(AKFixtureLogHas(@"event=threshold outcome=rebased"));
-    AKTouchCameraUpdate(&camera,1,905,402,3.7,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraGestureUpdate(&camera,1,905,402,3.7,surface,AKFixtureCameraEmit,context);
     assert([events.lastObject isEqual:@"move5.0,2.0"]);
-    AKTouchCameraUpdate(&camera,0,0,0,3.8,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraGestureUpdate(&camera,0,0,0,3.8,surface,AKFixtureCameraEmit,context);
     // Every exit the *app* causes is one release and nothing left behind, and the next touch
     // is a camera drag immediately. Each pass uses its own clock, because a finger trace that
     // goes back in time is itself a cancellation.
     NSTimeInterval clock = 10;
     for (NSString *reason in @[@"background",@"resign",@"resize",@"settings",@"controller",@"teardown"]) {
         [events removeAllObjects];
-        AKTouchCameraUpdate(&camera,1,300,200,clock,surface,AKFixtureCameraEmit,context);
+        AKTouchCameraGestureUpdate(&camera,1,300,200,clock,surface,AKFixtureCameraEmit,context);
         assert(AKTouchCameraHold(&camera,clock+0.5,AKFixtureCameraEmit,context));
         AKTouchCameraReset(&camera,reason,AKFixtureCameraEmit,context);
         assert(([events isEqual:@[@"down0",@"up0"]]));
@@ -597,32 +597,32 @@ static void TestDirectCamera(void) {
         // A second reset on a gesture that is already gone emits nothing at all.
         AKTouchCameraReset(&camera,reason,AKFixtureCameraEmit,context);
         assert(events.count == 2);
-        AKTouchCameraUpdate(&camera,1,320,210,clock+1,surface,AKFixtureCameraEmit,context);
-        AKTouchCameraUpdate(&camera,1,330,214,clock+1.1,surface,AKFixtureCameraEmit,context);
+        AKTouchCameraGestureUpdate(&camera,1,320,210,clock+1,surface,AKFixtureCameraEmit,context);
+        AKTouchCameraGestureUpdate(&camera,1,330,214,clock+1.1,surface,AKFixtureCameraEmit,context);
         assert([events.lastObject isEqual:@"move10.0,4.0"]);
-        AKTouchCameraUpdate(&camera,0,0,0,clock+1.2,surface,AKFixtureCameraEmit,context);
+        AKTouchCameraGestureUpdate(&camera,0,0,0,clock+1.2,surface,AKFixtureCameraEmit,context);
         clock += 10;
     }
     // A *cancelled* touch is the platform's rule, not the app's: the held button is released
     // once, and then the rest of that gesture is suppressed until every finger is lifted. The
-    // leftover finger must not become camera motion - that is the jump `AKTrackpadCancel`
+    // leftover finger must not become camera motion - that is the jump `AKLayerTrackpadCancel`
     // blocks, and this app keeps it.
     [events removeAllObjects];
     clock = 200;
-    AKTouchCameraUpdate(&camera,1,300,200,clock,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraGestureUpdate(&camera,1,300,200,clock,surface,AKFixtureCameraEmit,context);
     assert(AKTouchCameraHold(&camera,clock+0.5,AKFixtureCameraEmit,context));
     AKTouchCameraReset(&camera,@"cancelled",AKFixtureCameraEmit,context);
     assert(([events isEqual:@[@"down0",@"up0"]]));
     assert(AKTouchCameraIsActive(&camera));            // the finger is still down
-    AKTouchCameraUpdate(&camera,1,360,240,clock+1,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraGestureUpdate(&camera,1,360,240,clock+1,surface,AKFixtureCameraEmit,context);
     assert(events.count == 2);                          // and it does not drag the camera
-    AKTouchCameraUpdate(&camera,0,0,0,clock+1.1,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraGestureUpdate(&camera,0,0,0,clock+1.1,surface,AKFixtureCameraEmit,context);
     assert(events.count == 2);                          // lifting it is not a click either
     assert(!AKTouchCameraIsActive(&camera));
-    AKTouchCameraUpdate(&camera,1,320,210,clock+2,surface,AKFixtureCameraEmit,context);
-    AKTouchCameraUpdate(&camera,1,330,214,clock+2.1,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraGestureUpdate(&camera,1,320,210,clock+2,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraGestureUpdate(&camera,1,330,214,clock+2.1,surface,AKFixtureCameraEmit,context);
     assert([events.lastObject isEqual:@"move10.0,4.0"]); // a new touch drags at once
-    AKTouchCameraUpdate(&camera,0,0,0,clock+2.2,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraGestureUpdate(&camera,0,0,0,clock+2.2,surface,AKFixtureCameraEmit,context);
     assert(AKFixtureLogHas(@"event=lifecycle outcome=cleanup reason=background"));
     assert(AKFixtureLogHas(@"event=cancel outcome=cancelled"));
     // Everything above is paired, press for release, before the one case that has no delegate
@@ -630,7 +630,7 @@ static void TestDirectCamera(void) {
     AKFixtureAssertPressesHaveReleases();
     // Teardown: the delegate may already be gone, so nothing is emitted - but the gesture is
     // still cleared, so nothing can answer a later frame.
-    AKTouchCameraUpdate(&camera,1,300,200,1000,surface,AKFixtureCameraEmit,context);
+    AKTouchCameraGestureUpdate(&camera,1,300,200,1000,surface,AKFixtureCameraEmit,context);
     AKTouchCameraReset(&camera,@"teardown",NULL,NULL);
     assert(!AKTouchCameraIsActive(&camera));
     AKFixtureEndLog();

@@ -2,6 +2,25 @@
 # Build only our runtime into the app. Stage the original as a separate module.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# TOLKARA_DEVICE_POLICY=main-only in local.env: a device build is the one build
+# of main, with every profile in profiles/ and the generic adapters, never a
+# build for one application ("One build for the device" in AGENTS.md).
+POLICY=$(cd "$ROOT" && . tools/localenv.sh && tolkara_load_env && printf '%s' "${TOLKARA_DEVICE_POLICY:-}")
+# ACTION is set by Xcode only: the regression tests run this script directly.
+if [ "$POLICY" = main-only ] && [ "${PLATFORM_NAME:-iphoneos}" = iphoneos ] && [ -n "${ACTION:-}" ]; then
+    OWN_PROFILE=${TOLKARA_PROFILE:-}
+    [ -n "$OWN_PROFILE" ] || OWN_PROFILE=$(cd "$ROOT" && . tools/localenv.sh && tolkara_load_env && printf '%s' "${TOLKARA_PROFILE:-}")
+    REFUSED=()
+    [ "$(git -C "$ROOT" branch --show-current)" = main ] || REFUSED+=("the checkout is not on main")
+    [ -z "$(git -C "$ROOT" status --porcelain --untracked-files=no)" ] || REFUSED+=("main has uncommitted changes: commit them first")
+    [ -z "${2:-}" ] || REFUSED+=("GUEST_EXE names one application")
+    [ "${NATIVE_GUEST_SHIMS:-GENERIC}" = GENERIC ] || REFUSED+=("NATIVE_GUEST_SHIMS is not GENERIC")
+    [ -z "$OWN_PROFILE" ] || REFUSED+=("TOLKARA_PROFILE adds a profile outside profiles/: add it to profiles/ instead")
+    if [ ${#REFUSED[@]} -gt 0 ]; then
+        for reason in "${REFUSED[@]}"; do echo "error: device build refused (TOLKARA_DEVICE_POLICY=main-only): $reason"; done
+        exit 1
+    fi
+fi
 # The second argument (GUEST_EXE) may list several executables separated by
 # ':', like PATH: the compatibility libraries then cover all of them.
 OUT=$1; EXES=()
@@ -21,8 +40,9 @@ mkdir -p "$OUT/Guest"
 # Remove resources left by older builds, including the proprietary executable.
 rm -f "$OUT/Guest/OriginalExecutable.bin" "$OUT/Guest/manifest.json"
 # A library map left by a build for one executable would turn a generic build's stubs off.
-# absent.json: libraries a generic build presents as unavailable (translation/<Leaf>/absent).
-rm -f "$OUT/Guest/libraries.json" "$OUT/Guest/absent.json"
+# absent.json: libraries a generic build presents as unavailable (translation/<Leaf>/absent);
+# opt-in.json: adapters it uses only for profiles that name them (translation/<Leaf>/opt-in).
+rm -f "$OUT/Guest/libraries.json" "$OUT/Guest/absent.json" "$OUT/Guest/opt-in.json"
 rm -rf "$OUT/Guest/Nibs"
 # Adapters left by a build for other executables or other experimental adapters:
 # every one would be signed into the app, and a generic build opens ak<Leaf>.dylib by name.
@@ -70,11 +90,15 @@ if [ "${NATIVE_GUEST_SHIMS:-NO}" = YES ] || [ "${NATIVE_GUEST_SHIMS:-NO}" = GENE
         python3 "$ROOT/tools/build_shims.py" "$P" "$W/surface.json" "$OUT/Frameworks"
         cp "$W/map.json" "$OUT/Guest/libraries.json"
     fi
-    # The builder's own Mac's public root certificates. TOLKARA_SYSTEM_ROOTS=NO
-    # leaves them out, as the published release build does: it is not built on
-    # the user's Mac, and nothing exported from macOS is redistributed.
+    # The builder's own Mac's public root certificates. The published release
+    # build is not built on the user's Mac, and nothing exported from macOS is
+    # redistributed: TOLKARA_SYSTEM_ROOTS=PUBLIC packages Mozilla's public list
+    # instead (translation/Security/PublicRoots), and NO packages none.
     rm -f "$OUT/CompatibilityRootCertificates.plist"
-    if [ "${TOLKARA_SYSTEM_ROOTS:-YES}" != NO ]; then
+    if [ "${TOLKARA_SYSTEM_ROOTS:-YES}" = PUBLIC ]; then
+        python3 "$ROOT/tools/package_public_roots.py" "$ROOT/translation/Security/PublicRoots/cacert.pem" \
+            "$OUT/CompatibilityRootCertificates.plist"
+    elif [ "${TOLKARA_SYSTEM_ROOTS:-YES}" != NO ]; then
         MACSDK=$(xcrun --sdk macosx --show-sdk-path)
         xcrun --sdk macosx clang -target arm64-apple-macos14.0 -isysroot "$MACSDK" \
           -fobjc-arc -Wno-deprecated-declarations -framework Foundation -framework Security \

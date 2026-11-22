@@ -9,8 +9,11 @@
 # Upstream: candidate (not submitted) - the package, the licence resources and the
 # scheme setting are the parts upstream might want for itself.
 #
+# Rebased onto Tolkara edc3628: upstream added GameController.framework to the same
+# dependency list; ZIPFoundation sits after it.
+#
 diff --git a/project.yml b/project.yml
-index 0d350d7..91c035d 100644
+index 6f053f7..9065968 100644
 --- a/project.yml
 +++ b/project.yml
 @@ -2,6 +2,10 @@ name: Tolkara
@@ -24,7 +27,7 @@ index 0d350d7..91c035d 100644
  settings:
    base:
      # Signing identity and identifiers come from your ignored local.env through
-@@ -31,6 +35,7 @@ schemes:
+@@ -34,6 +38,7 @@ schemes:
        executable: Tolkara
        # Guest execution must not keep Xcode's debugger attached.
        debugEnabled: false
@@ -32,7 +35,7 @@ index 0d350d7..91c035d 100644
      management:
        shared: true
        isShown: true
-@@ -45,9 +50,18 @@ targetTemplates:
+@@ -58,12 +63,21 @@ targetTemplates:
        - path: runtime
        # The shader-container rewrap, for the Diagnostics menu's captured-shader check.
        - path: translation/Metal/LibraryContainer.m
@@ -47,11 +50,14 @@ index 0d350d7..91c035d 100644
      dependencies:
        - sdk: Security.framework
        - sdk: libz.tbd
+       # The Diagnostics menu's controller check and --trace-controllers read
+       # the framework a guest's gamepad code uses (launcher/App/ControllerProbe.m).
+       - sdk: GameController.framework
 +      - package: ZIPFoundation
      entitlements:
        path: launcher/App.entitlements
        properties:
-@@ -57,8 +71,9 @@ targetTemplates:
+@@ -73,8 +87,9 @@ targetTemplates:
        base:
          PRODUCT_BUNDLE_IDENTIFIER: $(TOLKARA_BUNDLE_ID)
          GENERATE_INFOPLIST_FILE: YES

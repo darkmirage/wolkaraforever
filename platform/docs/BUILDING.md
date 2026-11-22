@@ -72,8 +72,10 @@ xcrun devicectl list devices
   `experimental` under `translation/` take part only when named here, separated
   by `:`. Today `GameController` (reports no controllers, real gamepads
   included) and `MetalFX` (presented as absent), both written for one game's
-  crashes and not yet validated on a device. They affect every application in
-  the build.
+  crashes and not yet validated on a device. `MetalFX` affects every
+  application in the build; `GameController` is also marked `opt-in`, so a
+  generic build uses it only for a profile whose `TOLKARA_ADAPTERS` names it
+  (Cyberpunk 2077), and other games keep their controllers.
 
 Xcode signs automatically (`CODE_SIGN_STYLE: Automatic`). The first build
 registers the bundle IDs and the iPad with your team and creates the profiles.
@@ -134,6 +136,13 @@ configuration. This is Tolkara's own on-device packet tunnel. It routes one
 private address to the iPad's own developer service and carries no other
 traffic; nothing leaves the device. How it works is documented in
 [LOCAL_AUTHORIZATION.md](LOCAL_AUTHORIZATION.md).
+
+The developer service usually listens on port 49152. iOS sometimes starts it on
+another port (an iPhone on iOS 27.2 used 54059). Tolkara then looks up the port
+the device advertises for itself over Bonjour, so the first such launch asks
+for **Local Network** access. If you decline, Developer service cannot connect
+until the service is back on 49152, which a restart of the device may bring
+about.
 
 After enrolment the Mac is no longer needed: launches, relaunches and reboots
 work on the iPad alone. You need to repeat steps 3 and 4 only when your
@@ -218,10 +227,15 @@ your sideloading tool knows to request them), as a generic build (`NATIVE_GUEST_
 release carries the same build, made by `.github/workflows/release.yml`, with
 install links for SideStore and LiveContainer in its notes; building it
 yourself remains the supported way. The release build leaves out the public
-root certificates a build exports from your own Mac, so an application that
-reads macOS's system root certificate store finds none there. Install it with your sideloading
+root certificates a build exports from your own Mac. An application that
+reads macOS's system root certificate store (World of Warcraft does, to verify
+its login servers) is offered Mozilla's public list in their place
+(`TOLKARA_SYSTEM_ROOTS=PUBLIC`, `translation/Security/PublicRoots`), of which
+it gets only the certificates the device itself trusts. Install it with your sideloading
 tool, open it with JIT enabled, then add your application in the app. Opened
-without JIT, Tolkara says so instead of starting the application. Sideloading
+without JIT, Tolkara says so instead of starting the application, and can ask
+StikDebug for it itself ([NO_MAC.md](NO_MAC.md), the route for someone with no
+Mac at all). Sideloading
 tools usually change the app's bundle identifier: copy your application's files
 with Finder or the Files app, or set `TOLKARA_BUNDLE_ID` to the installed
 identifier before running a profile's `install.py` (step 5). This mode has
@@ -244,6 +258,15 @@ launcher expects them. For the tested profile:
 python3 profiles/wow-classic-era/install.py
 ```
 
+The World of Warcraft scripts first check that Battle.net has finished
+installing the game: the version of the executable must be the one its
+`.build.info` names for that product. A copy made while an update is under way
+starts on the iPad and then stops with the game's own error (*Invalid schema
+... for Table StartupFiles*). When the script stops, open Battle.net, let the
+update finish, start the game once as far as the character list, quit both and
+run the script again, without `--skip-data` after a game update, so the data
+matches the executable. `--skip-version-check` copies regardless.
+
 An app whose profile is in `profiles/` appears in Tolkara's library by itself
 once its files are there. For anything else, copy the application's folder with
 Finder or the Files app, then tap **+** in Tolkara and choose its executable (or
@@ -255,11 +278,19 @@ profile: see [profiles/README.md](../profiles/README.md).
 Open Tolkara on the iPad, choose the execution mode if it asks, and tap the
 app in the library. With Developer service, keep Tolkara in the foreground
 while it prepares memory (about 3 MB per second: 33 seconds for Heroes III). One app can start per
-session: to start another, open Tolkara again. When an app closes cleanly,
-Tolkara ends itself after a short note, so the next tap on its icon opens the
-library ready to start another app.
-Runtime output goes to `Documents/native-guest.log`; the Diagnostics menu
+session: to start another, open Tolkara again. When an app closes, Tolkara
+ends itself after a short note, so the next tap on its icon opens the library
+ready to start another app; an app that is slow to shut down is ended after a
+few seconds.
+Runtime output goes to `Documents/native-guest.log` (the three runs before it
+stay beside it as `native-guest.1.log`, the latest, to `native-guest.3.log`); the Diagnostics menu
 (stethoscope) shows it and the other logs, and holds the development checks.
+Its **Controller input** check shows whether a game controller reaches
+Tolkara at all: for ten seconds it lists the controllers the GameController
+framework delivers and the buttons and sticks you move, and writes the same
+text to `Documents/controller-probe.txt`. Run it before starting an app, not
+while one runs: for those ten seconds it listens in the place of a
+controller's own input handler, and puts that back when it ends.
 
 ## Developing without a device
 
@@ -300,6 +331,23 @@ library, for example `xcrun devicectl device process launch --device <iPad>
 screen. Diagnostics that change what the runtime does are opt-in and never on
 for apps started from the library:
 
+- `--download-profile=<profile id> --download-region=<id>
+  --download-locale=<locale>` (experimental): the library appears as on a
+  plain launch and starts that profile's download
+  ([profiles/README.md](../profiles/README.md), `download`) as its **+** menu
+  would after its questions, if the application is not in Documents yet. A
+  download that asks no questions (`"steam"`) needs only `--download-profile`.
+- `--download-runtime-url=<https address>`, `--download-runtime-sha256=<64
+  hexadecimal digits>`, `--download-runtime-size=<bytes>` (with
+  `--download-profile`, for a `"steam"` download): each replaces that value
+  of the profile's `download.runtime` for this launch, to try a runtime
+  archive before it is published. A value that is not given stays the
+  profile's; the archive is still checked against the SHA-256 and size.
+- `--download-root=<folder>` (with `--download-profile`, for a `"steam"`
+  download): the download goes under that top folder of Documents instead of
+  the profile's, also when the application is already in place, which stays
+  untouched. To start what was downloaded, point the profile's paths there
+  with `--guest-environment=` for that launch.
 - `--local-native-authorization` (Tolkara build, with `--native-startup` or
   `--native-initializer`): this iPad's Developer service prepares memory, as
   for a library launch, instead of a debugger on the Mac. It needs the
@@ -311,6 +359,15 @@ for apps started from the library:
   line once, with paths shortened as elsewhere in the log; a variable's value
   appears only when it lies in the app's home, otherwise only its length.
   Meant for bringing up a new application; it slows file access.
+- `--trace-controllers`: logs, as `[controller]` lines, the game controllers
+  the iPad's GameController framework lists when the run starts (name,
+  profiles, elements), then each connect, disconnect and became-current
+  notification with the size of the list. It only reads the framework and
+  listens to its notifications: no method is replaced and no input handler is
+  set, so it does not change what the application receives, and it does not
+  show what the application itself asks the framework for. An empty file
+  `Documents/trace-controllers` turns it on as well, also for an app started
+  from the library, for a device without a Mac at hand.
 - `--case-insensitive-files` (experimental): a file lookup that fails is
   retried with each missing folder or file name matched ignoring case, as on
   macOS, and the log names the folder. Files being created and Foundation's

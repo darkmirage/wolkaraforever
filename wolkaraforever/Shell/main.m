@@ -8,7 +8,9 @@
 // SFSpeechRecognizer, because the speech permission is asked for here beside the microphone:
 // iPadOS lists a privacy row in Settings only after the app has asked for it once.
 #import <Speech/Speech.h>
+#include <sys/stat.h>
 #import "AppLibrary.h"
+#import "ControllerProbe.h"
 #import "Diagnostics.h"
 #import "DiagnosticsViewController.h"
 #import "ExecutionMode.h"
@@ -579,6 +581,16 @@ static NSString *AKAudioStateDescription(void) {
           saved ? [NSString stringWithFormat:@"%llu bytes", saved.fileSize] : @"not there yet");
     [TKWolkaraForeverConfig.shared load];
     NSArray<NSString *> *arguments=NSProcessInfo.processInfo.arguments;
+    // --window-fraction=F (development): a window at most F of the screen's width, so that
+    // the system keeps it beside another app's instead of full screen; an app that is not
+    // on screen is suspended (docs/MULTIPROCESS.md, "Two apps").
+    for (NSString *argument in arguments) if ([argument hasPrefix:@"--window-fraction="] && [scene isKindOfClass:UIWindowScene.class]) {
+        double fraction=[argument substringFromIndex:18].doubleValue;
+        UIWindowScene *windowScene=(UIWindowScene *)scene;
+        CGSize screen=windowScene.screen.bounds.size;
+        if (fraction>0.2 && fraction<1 && windowScene.sizeRestrictions)
+            windowScene.sizeRestrictions.maximumSize=CGSizeMake(MAX(screen.width,screen.height)*fraction,MAX(screen.width,screen.height));
+    }
     // WolkaraForever: report what the controller has and what it does, so pad input is
     // measured rather than assumed. It reads only, and never consumes an input.
     [AKControllerInspector.shared begin];
@@ -735,8 +747,9 @@ static NSString *AKAudioStateDescription(void) {
                    || [arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestLanguage]]
                    || [arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestAddonsPage]]
                    || [arguments containsObject:[@"--selftest=" stringByAppendingString:AKSelfTestControls]];
+    // The library's own development arguments (--download-…, LibraryViewController.m) keep the library.
     for(NSUInteger i=1;i<arguments.count;i++) if(![arguments[i] hasPrefix:TKExecutionModeArgumentPrefix] &&
-        ![arguments[i] isEqualToString:TKExecutionModeSaveArgument] &&
+        ![arguments[i] isEqualToString:TKExecutionModeSaveArgument] && ![arguments[i] hasPrefix:@"--download-"] &&
         ![arguments[i] isEqualToString:@"--addons-preview"] &&
         !(homeSelfTest && [arguments[i] hasPrefix:@"--selftest"])) plain=NO;
     if (plain) {
@@ -992,6 +1005,9 @@ static NSString *AKAudioStateDescription(void) {
         [TKDiagnostic diagnosticWithTitle:WKLocalized(@"diag.capturedShaders.title") detail:WKLocalized(@"diag.capturedShaders.detail") run:^(TKDiagnosticReport report) {
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{ report(TKCapturedShaderProbeReport(),YES); });
         }],
+        [TKDiagnostic diagnosticWithTitle:@"Controller input" detail:@"What the iPad's GameController framework delivers here; press buttons on a paired controller for 10 seconds." run:^(TKDiagnosticReport report) {
+            TKControllerProbeRun(10,report);
+        }],
     ]]];
 #if TOLKARA_INTEGRATED_AUTH
     TKLocalAuthorization *authorization=self.localAuthorization;
@@ -1195,8 +1211,33 @@ static NSString *AKAudioStateDescription(void) {
 
 #pragma mark Native runs
 
+// Development: --snapshot-interval=<seconds> renders this app's own windows into
+// Documents/snapshot.png on a timer, so an unattended run can be checked.
+static void TKScheduleSnapshots(NSArray<NSString *> *arguments, FILE *log) {
+    double interval=0;
+    for (NSString *argument in arguments) if ([argument hasPrefix:@"--snapshot-interval="]) interval=[argument substringFromIndex:20].doubleValue;
+    if (interval<1) return;
+    NSString *path=TKDocumentsPath(@"snapshot.png");
+    fprintf(log,"[host] window snapshots every %.0f s in Documents/snapshot.png\n",interval);
+    NSTimer *timer=[NSTimer timerWithTimeInterval:interval repeats:YES block:^(NSTimer *unused) {
+        (void)unused;
+        UIWindowScene *scene=nil;
+        for (UIScene *candidate in UIApplication.sharedApplication.connectedScenes)
+            if ([candidate isKindOfClass:UIWindowScene.class]) { scene=(UIWindowScene *)candidate; break; }
+        if (!scene) return;
+        UIGraphicsImageRenderer *renderer=[[UIGraphicsImageRenderer alloc] initWithBounds:scene.coordinateSpace.bounds];
+        UIImage *image=[renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
+            (void)context;
+            for (UIWindow *window in scene.windows) if (!window.hidden) [window drawViewHierarchyInRect:window.frame afterScreenUpdates:NO];
+        }];
+        [UIImagePNGRepresentation(image) writeToFile:path atomically:YES];
+    }];
+    [NSRunLoop.mainRunLoop addTimer:timer forMode:NSRunLoopCommonModes];
+}
+
 // Refuse a native startup before it begins; the runtime log says why.
 - (void)refuseNativeGame:(NSString *)reason {
+    TKKeepEarlierLogs();
     FILE *log=fopen(TKDocumentsPath(@"native-guest.log").fileSystemRepresentation,"w");
     if (log) { fprintf(log,"[host] native startup refused: %s\n",reason.UTF8String); fclose(log); }
     self.status.text=reason;
@@ -1451,10 +1492,10 @@ static NSString *AKAudioStateDescription(void) {
     [self showClosingPage:WKLocalized(@"shell.didNotStart")];
 }
 - (void)runNativeGame:(BOOL)fullStartup app:(TKApp *)app container:(NSString *)container {
-    if (!self.cloudPrepared && [TKSteamCloudCoordinator configuredProfile:app.profile documents:TKDocumentsPath(@"")]) {
+    if (!self.cloudPrepared && [TKSteamCloudCoordinator configuredProfile:app.profile documents:TKDocumentsPath(@"") configuration:app.steamCloud]) {
         if(self.cloudPreparing)return;self.cloudPreparing=YES;
         self.cloudFullStartup=fullStartup;self.cloudApp=app;self.cloudContainer=container;
-        self.steamCloud=[[TKSteamCloudCoordinator alloc] initWithProfile:app.profile documents:TKDocumentsPath(@"")];
+        self.steamCloud=[[TKSteamCloudCoordinator alloc] initWithProfile:app.profile documents:TKDocumentsPath(@"") configuration:app.steamCloud];
         self.status.text=WKLocalized(@"shell.cloudSync");
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
             NSError *error=nil;NSString *report=nil;BOOL ready=[self.steamCloud prepareWithReport:&report error:&error];
@@ -1476,9 +1517,17 @@ static NSString *AKAudioStateDescription(void) {
     }
     UIApplication.sharedApplication.idleTimerDisabled = YES;
     NSString *logPath = TKDocumentsPath(@"native-guest.log");
+    TKKeepEarlierLogs();
     FILE *log = fopen(logPath.fileSystemRepresentation, "w");
     if (!log) { self.status.text = WKLocalized(@"shell.logUnavailable"); [self showStartStopped]; return; }
     setvbuf(log, NULL, _IOLBF, 0);
+    if ([arguments containsObject:@"--window-input-diagnostics"]) {
+        int console=dup(STDERR_FILENO);
+        if (console>=0) {
+            char descriptor[32]; snprintf(descriptor,sizeof(descriptor),"%d",console);
+            setenv("TOLKARA_INPUT_CONSOLE_FD",descriptor,1);
+        }
+    }
     dup2(fileno(log), STDERR_FILENO);
     dup2(fileno(log), STDOUT_FILENO);
     setvbuf(stdout, NULL, _IOLBF, 0);
@@ -1488,6 +1537,9 @@ static NSString *AKAudioStateDescription(void) {
     // to stderr, so its first report went nowhere. Report again now that the
     // log is attached: this is the inventory, and everything pressed follows it.
     [AKControllerInspector.shared logInventories];
+    // With --trace-controllers: what the GameController framework lists and
+    // announces during the run. Observation only; a no-op without the option.
+    TKControllerProbeStartLogging(log);
     NSString *map = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"Guest/libraries.json"];
     NSError *error=nil;
     NSString *path=app ? [self.library executablePathForApp:app error:&error] : nil;
@@ -1518,6 +1570,46 @@ static NSString *AKAudioStateDescription(void) {
     // profile; nothing here changes the application). `${Documents}` in a
     // variable's value stands for the absolute Documents folder.
     NSString *documents=TKDocumentsPath(@"");
+    // `${Group}`: the App Group container this build shares with its second build
+    // (docs/MULTIPROCESS.md, "Two apps"), also given as TOLKARA_GROUP_DIR.
+    NSString *groupName=[NSBundle.mainBundle objectForInfoDictionaryKey:@"TolkaraAppGroup"];
+    NSString *group=[groupName isKindOfClass:NSString.class]?
+        [NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:groupName].path:nil;
+    if (group) { setenv("TOLKARA_GROUP_DIR",group.fileSystemRepresentation,1); fprintf(log,"[host] App Group folder available\n"); }
+    // TOLKARA_GROUP_SEED (profile or launch): folders, relative and ';'-separated, copied from
+    // Documents into the App Group folder where files are missing there (nothing is replaced):
+    // the files both builds open, such as a prefix, cannot be placed there from the Mac.
+    NSString *seed=app.environment[@"TOLKARA_GROUP_SEED"];
+    for (NSString *argument in arguments) if ([argument hasPrefix:@"--guest-environment=TOLKARA_GROUP_SEED="]) seed=[argument substringFromIndex:39];
+    if (group && seed.length) for (NSString *relative in [seed componentsSeparatedByString:@";"]) {
+        if (!relative.length || [relative containsString:@".."]) continue;
+        NSString *from=[documents stringByAppendingPathComponent:relative], *to=[group stringByAppendingPathComponent:relative];
+        NSFileManager *files=NSFileManager.defaultManager;
+        NSDirectoryEnumerator *walk=[files enumeratorAtPath:from];
+        NSUInteger copied=0, failed=0;
+        for (NSString *item in walk) {
+            NSDictionary *attributes=walk.fileAttributes;
+            // A Wine server's own state is the running server's, never copied.
+            if ([item.lastPathComponent isEqual:@".wineserver"]) { [walk skipDescendants]; continue; }
+            NSString *source=[from stringByAppendingPathComponent:item], *target=[to stringByAppendingPathComponent:item];
+            if ([attributes.fileType isEqual:NSFileTypeDirectory]) { [files createDirectoryAtPath:target withIntermediateDirectories:YES attributes:nil error:NULL]; continue; }
+            if (![attributes.fileType isEqual:NSFileTypeRegular] || [files fileExistsAtPath:target]) continue;
+            [files createDirectoryAtPath:target.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:NULL];
+            if ([files copyItemAtPath:source toPath:target error:NULL]) copied++; else failed++;
+        }
+        fprintf(log,"[host] App Group seed %s: %lu files copied, %lu failed\n",relative.UTF8String,(unsigned long)copied,(unsigned long)failed);
+        // An earlier seed may have copied server state with open permissions; the server
+        // refuses a directory others can read, so it is made private again.
+        NSString *state=[to stringByAppendingPathComponent:@".wineserver"];
+        BOOL directory=NO;
+        struct stat st;
+        if ([files fileExistsAtPath:state isDirectory:&directory] && directory && !stat(state.fileSystemRepresentation,&st) && (st.st_mode&077)) {
+            // Kept, not deleted: moved aside, and the server makes a fresh one.
+            NSString *aside=[state stringByAppendingFormat:@"-seeded-%ld",(long)time(NULL)];
+            BOOL moved=[files moveItemAtPath:state toPath:aside error:NULL];
+            fprintf(log,"[host] App Group %s/.wineserver had mode %o: %s\n",relative.UTF8String,st.st_mode&0777,moved?"moved aside":"could not be moved");
+        }
+    }
     NSMutableDictionary<NSString *, NSString *> *environment=[app.environment mutableCopy];
     for (NSString *argument in arguments) if ([argument hasPrefix:@"--guest-environment="]) {
         // Development launches may set a variable over the profile's (NAME=value).
@@ -1527,8 +1619,15 @@ static NSString *AKAudioStateDescription(void) {
     }
     for (NSString *name in [environment.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
         NSString *value=[environment[name] stringByReplacingOccurrencesOfString:@"${Documents}" withString:documents];
+        if (group) value=[value stringByReplacingOccurrencesOfString:@"${Group}" withString:group];
         setenv(name.UTF8String,value.UTF8String,1);
         fprintf(log,"[host] environment %s=%s\n",name.UTF8String,TKHomeDisplayPath(value,NSHomeDirectory()).UTF8String);
+    }
+    // TOLKARA_CHDIR: a working directory outside Documents (in the App Group folder).
+    const char *chdir_to=getenv("TOLKARA_CHDIR");
+    if (chdir_to && *chdir_to) {
+        if (chdir(chdir_to)) fprintf(log,"[host] TOLKARA_CHDIR failed: %s\n",strerror(errno));
+        else fprintf(log,"[host] working directory from TOLKARA_CHDIR\n");
     }
     NSMutableArray<NSString *> *launchArguments=[app.arguments mutableCopy];
     BOOL guestArgumentsOverridden=NO;
@@ -1543,6 +1642,7 @@ static NSString *AKAudioStateDescription(void) {
     else [launchArguments addObjectsFromArray:[TKBattleNetSession handOffForProfile:app.profile]];
     const char *argv[64]; size_t argc=0;
     for (NSString *argument in launchArguments) if (argc<64) { argv[argc++]=argument.UTF8String; fprintf(log,"[host] argument %s\n",argument.UTF8String); }
+    ng_set_profile_identifier(app.profile.UTF8String);
     ng_set_arguments(argv,argc);
     // A profile's runtime libraries (opened by path, not linked) are placed with it.
     if (app.runtime) {
@@ -1555,6 +1655,10 @@ static NSString *AKAudioStateDescription(void) {
             fprintf(log,"[host] library %s\n",library.UTF8String);
         }
         ng_set_libraries(runtime.fileSystemRepresentation,libraries,count);
+        if (app.processes>1) {
+            ng_set_process_slots(app.processes);
+            fprintf(log,"[host] up to %lu processes at once\n",(unsigned long)app.processes);
+        }
         if (app.codePool) {
             ng_set_code_pool((size_t)app.codePool<<20);
             fprintf(log,"[host] code pool %lu MB\n",(unsigned long)app.codePool);
@@ -1589,6 +1693,7 @@ static NSString *AKAudioStateDescription(void) {
     [defaults removeObjectForKey:@"WolkaraForever.NetworkHealth.NextLaunch"];
     ng_set_network_health(networkHealth);
     if(networkHealth) fprintf(log,"[host] network health: anonymous TCP counters enabled for this launch\n");
+    TKScheduleSnapshots(arguments,log);
     BOOL ok = ng_initialize(path.fileSystemRepresentation, NSBundle.mainBundle.privateFrameworksPath.fileSystemRepresentation, map.fileSystemRepresentation, log, fullStartup);
     [TKBattleNetSession gameEnded];
     if (externalJIT) {
@@ -1612,14 +1717,18 @@ static NSString *AKAudioStateDescription(void) {
     }
     // The outcome as the host saw it (tools/run.sh requires "returned").
     fprintf(log,"[host] native %s %s\n",fullStartup?"startup":"first initializer",ok?"returned":"stopped"); fflush(log);
-    self.status.text = ok ? (fullStartup ? [app.name stringByAppendingString:WKLocalized(@"shell.closed")] : WKLocalized(@"shell.firstInitializer")) : WKLocalized(@"shell.nativeStopped");
+    // A game whose main returned has ended, whatever it returned: World of
+    // Warcraft returns -1 from some of its own ways out.
+    int code=0; BOOL closed=fullStartup && ng_main_returned(&code);
+    BOOL ended=ok || closed;
+    self.status.text = ended ? (fullStartup ? [app.name stringByAppendingString:WKLocalized(@"shell.closed")] : WKLocalized(@"shell.firstInitializer")) : WKLocalized(@"shell.nativeStopped");
     [self showStartStopped];
-    if (ok && fullStartup) [self.wowController finishStartupWithMessage:WKLocalized(@"shell.sessionEnded") failed:NO];
+    if (ended && fullStartup) [self.wowController finishStartupWithMessage:WKLocalized(@"shell.sessionEnded") failed:NO];
     // One guest per process: a full startup, whether it ran or not, means Play
     // cannot work again here. Say so on the home page as well, so the close
     // action exists even if the closing page cannot appear.
     if (fullStartup)
-        [self endSession:ok?WKLocalized(@"shell.session.gameClosed"):
+        [self endSession:ended?WKLocalized(@"shell.session.gameClosed"):
             WKLocalized(@"shell.session.didNotStart")];
     // One guest per process, and the guest has now ended: whatever the outcome, this process
     // can never start another. Leaving the launcher up was a dead end - once a session has
@@ -1631,8 +1740,8 @@ static NSString *AKAudioStateDescription(void) {
     // neither case can be retried in this process.
     if (fullStartup && self.uiSession) {
         [self.steamCloud flush];
-        fprintf(log,"[host] %s: the session is over; ending this process so the next launch can start the game\n",
-                ok ? "guest closed" : "the guest did not start"); fflush(log);
+        fprintf(log,"[host] %s (code %d): the session is over; ending this process so the next launch can start the game\n",
+                ended ? "guest closed" : "the guest did not start",code); fflush(log);
         [self showClosingPage:[app.name stringByAppendingString:WKLocalized(@"shell.hasClosed")]];
     }
     // Runtime callbacks retain this log for the life of the guest.
@@ -1864,8 +1973,10 @@ static NSString *AKAudioStateDescription(void) {
         return;
     }
     for(NSString *argument in arguments) if([argument hasPrefix:@"--steam-cloud-sync="]) {
-        NSString *profile=[argument substringFromIndex:19];
-        self.steamCloud=[[TKSteamCloudCoordinator alloc] initWithProfile:profile documents:TKDocumentsPath(@"")];
+        NSString *profile=[argument substringFromIndex:19];NSDictionary *configuration=nil;
+        NSString *profiles=[NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"Guest/Profiles"];
+        for(NSDictionary *known in [TKAppLibrary profilesInDirectory:profiles]) if([known[@"id"] isEqual:profile]) configuration=known[@"steamCloud"];
+        self.steamCloud=[[TKSteamCloudCoordinator alloc] initWithProfile:profile documents:TKDocumentsPath(@"") configuration:configuration];
         self.status.text=@"Synchronizing Steam Cloud saves…";
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
             NSError *error=nil;NSString *report=nil;BOOL ready=[self.steamCloud prepareWithReport:&report error:&error];
@@ -1949,6 +2060,27 @@ int main(int argc, char *argv[]) {
     // setting asks for a string.
     WKLocalizationSetLogger(WKLanguageLogSink);
     @autoreleasepool {
+        // Read only our saved adapter diagnostics, before any launch can replace
+        // the log. This also works when CoreDevice's file service is unavailable.
+        if ([NSProcessInfo.processInfo.arguments containsObject:@"--export-window-input-diagnostics"]) {
+            FILE *saved=fopen(TKDocumentsPath(@"native-guest.log").fileSystemRepresentation,"r");
+            if (!saved) { fprintf(stdout,"[input-export] no saved runtime log\n"); return 1; }
+            char line[4096]; unsigned count=0;
+            while (fgets(line,sizeof(line),saved)) {
+                if (strncmp(line,"[ak] ",5)) continue;
+                if (strstr(line,"UIKit event") || strstr(line,"host hit-test") ||
+                    strstr(line,"window input heartbeat") || strstr(line,"mouse event") ||
+                    strstr(line,"keyboard event") || strstr(line,"keyboard dequeued") ||
+                    strstr(line,"window diagnostic") || strstr(line,"UIKit window") ||
+                    strstr(line,"window ordered") || strstr(line,"input dispatch") ||
+                    strstr(line,"-[NSApplication run]")) {
+                    fputs(line,stdout); count++;
+                }
+            }
+            fclose(saved);
+            fprintf(stdout,"[input-export] records=%u\n",count); fflush(stdout);
+            return 0;
+        }
         [TKBattleNetSession beginProcess];
         // The saved game password, which belongs to the experimental Battle.net login: it answers
         // the keyboard's requests from here on and tells it whether the key may be offered.

@@ -56,7 +56,7 @@ program under Wine, say) names that runtime instead of a macOS `.app`:
   64. They are loaded with the executable as if it carried them, with what
   they link, and the runtime's `dlopen` of one gets that copy; the whole
   runtime folder then counts as the application's folder. Only with `runtime`.
-- `codePool`: megabytes (1 to 1024) of prepared executable memory after the
+- `codePool`: megabytes (1 to 2048) of prepared executable memory after the
   images, for a runtime that writes its own code (an emulator's JIT, the
   native modules it loads). `${CodePool}` in an `environment` value then
   stands for it as `0x<start>-0x<end>@0x<alias>`: code runs from start to end
@@ -65,6 +65,64 @@ program under Wine, say) names that runtime instead of a macOS `.app`:
   memory takes time at every launch (about a minute for 64 MB with Developer
   service), so ask for what the runtime needs. Only with `runtime`; Local
   signing cannot provide it.
+- `processes`: how many runtime process instances are available during one
+  iPad app session (1 to 8, default 1), for a program that starts
+  others, such as a launcher or a client with helper processes. Each process
+  beyond the first gets its own placed copy of the runtime's `libraries` and
+  an equal share of
+  `codePool`; it starts when the runtime spawns its own executable. Finished
+  instances and their used code pools remain retired until Tolkara exits, so
+  sequential game launches need additional slots and prepared memory. See
+  [docs/MULTIPROCESS.md](../docs/MULTIPROCESS.md). Only with `runtime`.
+- `steamCloud`: Steam Cloud saves the launcher keeps in step before each
+  start, every minute while the application runs and after it exits:
+  `appID`, the saves' Steam Cloud folder `remoteDirectory`, their
+  Documents folder `localDirectory`, their `fileNames` (1 to 64), and
+  optionally `uploadsEnabled` (local changes are uploaded) and `required`
+  (the application does not start unless Steam Cloud is signed in on the
+  device, so its saves never diverge). The sign-in stays in the device's
+  Keychain; sync state, backups and `sync.log` are in
+  `Documents/SteamCloud/<id>/`. On a device with no sync state yet, the
+  first sync takes the Cloud's files and backs up the local ones there.
+- `download` (experimental): what the launcher fetches for a user who has no
+  Mac to copy the application from. With it, **+** in the launcher offers
+  **Download <name>…** while the application is not in Documents. The
+  launcher fetches only the application itself, straight from its
+  publisher's content servers to the device, and checks each file against
+  the publisher's own file list; Tolkara hosts and bundles none of it. Its
+  keys depend on `service`. For `"blizzard"` (Blizzard's public version and
+  content servers, which need no account): `product`, the `regions` on offer
+  (each `id`, `name` and the `portal` the game calls it), the `locales`, the
+  `tags` of the publisher's file list that select this system's files, the
+  list's `folder` that is the application, the install's top folder `root`
+  (the working directory or a folder above it), and optionally `settings`:
+  the game's settings `file` and the names of its `region`, `text` and
+  `audio` settings, written once with the user's choices. Not for a profile
+  with a `runtime`.
+  For `"steam"` (the Windows Steam client, from Valve's public update server,
+  which needs no account; only for a profile with a `runtime`), exactly:
+  `root`, the top folder in Documents that holds the profile's `runtime` and
+  working directory; `runtime`, the archive of the Windows runtime Steam runs
+  in (Tolkara's own build of Wine and FEX with an empty Windows prefix), as
+  its https `url` (at most 512 characters), its `sha256` (64 lowercase
+  hexadecimal digits) and its `size` in bytes (up to 4 GiB); and `client`,
+  the name of Valve's list of the client's files (`steam_client_win64`). The
+  launcher fetches the archive, checks it against `sha256` and unpacks it
+  into `root`; then it fetches Steam's packages, checks each against the
+  SHA-256 in Valve's list, unpacks the installer package into the working
+  directory and keeps the others in its `package` folder, where Steam looks
+  for them at its first start. A prefix that is already there (it has a
+  `prefix/system.reg`) is left alone: it holds the user's Steam and sign-in.
+  The archive is a plain ZIP (stored or deflated entries, no ZIP64, no
+  encryption, no links) of `root`'s contents. The executable bit of its
+  entries is kept. Its optional top-level `tolkara-links.txt` is not
+  unpacked: each line, `<destination><tab><source>` with both paths inside
+  `root`, makes the destination a copy of the unpacked source that shares
+  its storage, so files the prefix repeats from the runtime are stored once.
+  `tools/package_windows_runtime.py` packs the archive and
+  `tools/publish_windows_runtime.sh <n>` publishes it as the release
+  `windows-runtime-<n>` and pushes the profile that names it. A published
+  archive is never replaced: a change gets the next number.
 
 Every profile in `profiles/` is built into the app. When the files a profile
 describes are present in Documents, the launcher adds that app to its library

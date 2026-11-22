@@ -44,19 +44,91 @@ class ProfileTests(unittest.TestCase):
                 'arguments': ['game.exe', '--windowed'], 'environment': {'PREFIX': '${Documents}/W/prefix', '_X1': ''},
                 'libraries': ['lib/core.so'], 'codePool': 64}
         check(self.write(good))
+        check(self.write({**good, 'codePool': 1550}))
+        check(self.write({**good, 'codePool': 2048}))
         for change in ({'runtime': '../R'}, {'runtime': '/R'}, {'runtime': 'R/'}, {'runtime': ''}, {'runtime': 'R/./bin'},
                        {'arguments': 'game.exe'}, {'arguments': [1]}, {'arguments': ['x'] * 65}, {'arguments': ['y' * 4097]},
                        {'environment': ['A=1']}, {'environment': {'1X': 'a'}}, {'environment': {'A B': 'a'}},
                        {'environment': {'A': 1}}, {'environment': {'A': 'y' * 4097}}, {'environment': {f'V{i}': '' for i in range(65)}},
                        {'libraries': 'lib/core.so'}, {'libraries': ['../core.so']}, {'libraries': ['/lib/core.so']},
                        {'libraries': ['lib/./core.so']}, {'libraries': [1]}, {'libraries': [f'l{i}.so' for i in range(65)]},
-                       {'codePool': 0}, {'codePool': 1025}, {'codePool': '64'}, {'codePool': 1.5}, {'codePool': True}):
+                       {'codePool': 0}, {'codePool': 2049}, {'codePool': '64'}, {'codePool': 1.5}, {'codePool': True}):
             with self.assertRaises(ValueError): check(self.write({**good, **change}))
         # A runtime's libraries only come with a runtime.
         without = {k: v for k, v in good.items() if k != 'runtime'}
         with self.assertRaises(ValueError): check(self.write(without))
         without = {k: v for k, v in good.items() if k not in ('runtime', 'libraries')}
         with self.assertRaises(ValueError): check(self.write(without))
+
+    def test_steam_cloud(self):
+        # Steam Cloud saves the launcher keeps in step: data only, the folder inside Documents.
+        cloud = {'appID': 3405340, 'remoteDirectory': '%WinAppDataLocalLow%Dev/Game/${SteamID}/',
+                 'localDirectory': 'G/prefix/saves', 'fileNames': ['a.json', 'b.json'], 'uploadsEnabled': True, 'required': True}
+        good = {'id': 'g', 'name': 'G', 'workingDirectory': 'G/game', 'runtime': 'G/Runtime', 'executable': 'bin/run',
+                'steamCloud': cloud}
+        check(self.write(good))
+        check(self.write({**good, 'steamCloud': {k: v for k, v in cloud.items() if k not in ('uploadsEnabled', 'required')}}))
+        for change in ({'appID': 0}, {'appID': 2 ** 32}, {'appID': '1'}, {'appID': True}, {'appID': 1.5},
+                       {'remoteDirectory': ''}, {'remoteDirectory': 1}, {'localDirectory': '/G'}, {'localDirectory': '../G'},
+                       {'localDirectory': 'G//saves'}, {'fileNames': []}, {'fileNames': 'a.json'}, {'fileNames': ['a.json', 'a.json']},
+                       {'fileNames': ['d/a.json']}, {'fileNames': ['..']}, {'fileNames': [1]}, {'fileNames': [f'{i}' for i in range(65)]},
+                       {'uploadsEnabled': 1}, {'required': 'yes'}, {'password': 'x'}):
+            with self.assertRaises(ValueError, msg=repr(change)): check(self.write({**good, 'steamCloud': {**cloud, **change}}))
+        for missing in ('appID', 'remoteDirectory', 'localDirectory', 'fileNames'):
+            with self.assertRaises(ValueError, msg=missing):
+                check(self.write({**good, 'steamCloud': {k: v for k, v in cloud.items() if k != missing}}))
+        with self.assertRaises(ValueError): check(self.write({**good, 'steamCloud': []}))
+
+    def test_download(self):
+        # What the launcher's experimental downloader fetches: data only, inside Documents.
+        block = {'service': 'blizzard', 'product': 'gamep',
+                 'regions': [{'id': 'eu', 'name': 'Europe', 'portal': 'EU'}], 'locales': ['enUS'], 'tags': ['OSX', 'arm64'],
+                 'folder': 'G.app', 'root': 'G',
+                 'settings': {'file': 'WTF/Config.wtf', 'region': 'portal', 'text': 'textLocale', 'audio': 'audioLocale'}}
+        good = {'id': 'g', 'name': 'G', 'workingDirectory': 'G/_flavor_', 'executable': 'G.app/Contents/MacOS/G', 'download': block}
+        check(self.write(good))
+        check(self.write({**good, 'download': {k: v for k, v in block.items() if k != 'settings'}}))
+        check(self.write({**good, 'workingDirectory': 'G'}))
+        for change in ({'service': 'other'}, {'product': '../x'}, {'product': 1}, {'regions': []},
+                       {'regions': [{'id': 'EU', 'name': 'E', 'portal': 'EU'}]}, {'regions': [{'id': 'eu', 'name': 'E'}]},
+                       {'regions': [{'id': 'eu', 'name': 'E', 'portal': 'EU', 'host': 'x'}]}, {'locales': ['english']}, {'locales': []},
+                       {'tags': []}, {'tags': ['a b']}, {'folder': '../G.app'}, {'folder': 'a/b'}, {'root': '/G'}, {'root': 'Other'},
+                       {'root': 'G/..'}, {'settings': {**block['settings'], 'file': '../Config.wtf'}},
+                       {'settings': {**block['settings'], 'region': 'por tal'}}, {'settings': {'file': 'c'}}, {'script': 'run.sh'}):
+            with self.assertRaises(ValueError, msg=repr(change)): check(self.write({**good, 'download': {**block, **change}}))
+        for missing in ('service', 'product', 'regions', 'locales', 'tags', 'folder', 'root'):
+            with self.assertRaises(ValueError, msg=missing):
+                check(self.write({**good, 'download': {k: v for k, v in block.items() if k != missing}}))
+        with self.assertRaises(ValueError): check(self.write({**good, 'download': []}))
+        # Not for a compatibility runtime's profile.
+        with self.assertRaises(ValueError): check(self.write({**good, 'runtime': 'G/Runtime'}))
+
+    def test_download_steam(self):
+        # The Windows Steam client and the runtime it runs in: exactly these keys, inside Documents.
+        archive = {'url': 'https://releases.example/tolkara-windows-runtime-1.zip', 'sha256': 'ab' * 32, 'size': 400000000}
+        block = {'service': 'steam', 'root': 'Steam', 'runtime': archive, 'client': 'steam_client_win64'}
+        good = {'id': 's', 'name': 'S', 'workingDirectory': 'Steam/prefix/drive_c/Program Files (x86)/Steam', 'runtime': 'Steam/Wine',
+                'executable': 'lib/wine/aarch64-unix/wine', 'download': block}
+        check(self.write(good))
+        check(self.write({**good, 'download': {**block, 'runtime': {**archive, 'size': 1 << 32, 'url': 'https://e.example/' + 'a' * 494}}}))
+        for change in ({'root': '/Steam'}, {'root': 'Steam/..'}, {'root': 'Other'}, {'root': 1}, {'client': 'steam_client_'},
+                       {'client': 'steam_client_../x'}, {'client': 'steam_cmd_win64'}, {'client': 'steam_client_WIN64'}, {'client': 7},
+                       {'script': 'run.sh'}, {'product': 'steam'}, {'runtime': archive['url']},
+                       {'runtime': {**archive, 'url': 'http://releases.example/r.zip'}}, {'runtime': {**archive, 'url': 'https://'}},
+                       {'runtime': {**archive, 'url': 'https://releases.example/r .zip'}}, {'runtime': {**archive, 'url': 7}},
+                       {'runtime': {**archive, 'url': 'https://e.example/' + 'a' * 495}},
+                       {'runtime': {**archive, 'sha256': 'abc'}}, {'runtime': {**archive, 'sha256': 'AB' * 32}}, {'runtime': {**archive, 'sha256': 5}},
+                       {'runtime': {**archive, 'size': 0}}, {'runtime': {**archive, 'size': -5}}, {'runtime': {**archive, 'size': 1.5}},
+                       {'runtime': {**archive, 'size': True}}, {'runtime': {**archive, 'size': '12'}}, {'runtime': {**archive, 'size': (1 << 32) + 1}},
+                       {'runtime': {**archive, 'mirror': 'https://other.example/r.zip'}}, {'runtime': {'url': archive['url'], 'sha256': archive['sha256']}}):
+            with self.assertRaises(ValueError, msg=repr(change)): check(self.write({**good, 'download': {**block, **change}}))
+        for missing in ('root', 'runtime', 'client'):
+            with self.assertRaises(ValueError, msg=missing):
+                check(self.write({**good, 'download': {k: v for k, v in block.items() if k != missing}}))
+        # Only for a compatibility runtime's profile, with the runtime and the working directory inside the top folder.
+        with self.assertRaises(ValueError): check(self.write({k: v for k, v in good.items() if k != 'runtime'}))
+        for change in ({'runtime': 'Wine'}, {'runtime': 'Steam'}, {'runtime': 'Steam\\Wine'}, {'workingDirectory': 'Steam'}, {'workingDirectory': 'Other/Steam'}):
+            with self.assertRaises(ValueError, msg=repr(change)): check(self.write({**good, **change}))
 
     def test_setup(self):
         # What the Mac app reads: plain data, https links, the destination above the working directory.
@@ -96,7 +168,7 @@ class ProfileTests(unittest.TestCase):
         with self.assertRaises(ValueError): check(self.write({**good, 'setup': {'firstRun': {'keys': ['portal']}}}))
         with self.assertRaises(ValueError): check(self.write({**good, 'setup': {'firstRun': {'settings': 'Config.wtf'}}}))
         # Both WoW clients name their own Config.wtf.
-        for name, folder in (('wow-classic-era', '_classic_era_'), ('wow-forever', '_classic_beta_')):
+        for name, folder in (('wow-classic-era', '_classic_era_'), ('wow-forever', '_forever_')):
             block = check(ROOT / 'profiles' / name / 'profile.json')['setup']['firstRun']
             self.assertEqual(block['settings'], f'{folder}/WTF/Config.wtf')
             self.assertEqual(block['keys'], ['portal', 'textLocale', 'audioLocale'])

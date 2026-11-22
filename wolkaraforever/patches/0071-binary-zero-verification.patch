@@ -1,8 +1,10 @@
 # Verify complete pre-entry zero arenas with the LLDB binary encoding when available.
 # Keep the read ranges, byte counts, write barrier and detach checks unchanged.
+diff --git a/authorization/Debugger/DebugArenaSession.swift b/authorization/Debugger/DebugArenaSession.swift
+index 579b772..e7d98e4 100644
 --- a/authorization/Debugger/DebugArenaSession.swift
 +++ b/authorization/Debugger/DebugArenaSession.swift
-@@ -10,7 +10,7 @@
+@@ -10,7 +10,7 @@ import Foundation
  // of every arena has been read back as zero, one zero byte per page is written
  // and read back.
  final class DebugArenaSession {
@@ -11,7 +13,7 @@
      enum Reason: Error { case protocolFailure, wrongProcess, wrongChallenge, unsafeRegion, nonzeroMemory, serverFailure, timedOut, cancelled, disconnected }
      struct Failure: Error { let reason: Reason; let detachConfirmed: Bool }
      struct Receipt { let pid: UInt32; let challenge: Data; let regions: [DebugArenaRequest.Region] }
-@@ -31,13 +31,17 @@
+@@ -31,13 +31,17 @@ final class DebugArenaSession {
      private var outstanding = 0, noAck = false, acknowledged = false, retries = 0, badPackets = 0, consolePackets = 0
      private var lastPacket = Data(), commandDeadline: TimeInterval = 0, totalDeadline: TimeInterval = 0, lastTime: TimeInterval = 0
      private var packetSize = 1024, chunk = 480, index = 0
@@ -30,7 +32,7 @@
      }
  
      private var offset: UInt64 = 0, regionCursor: UInt64 = 0
-@@ -108,9 +112,11 @@
+@@ -108,9 +112,11 @@ final class DebugArenaSession {
                      guard !noAck, badPackets < 2 else { throw Reason.protocolFailure }
                      badPackets += 1; events.append(.send(Data([45])))
                  case .packet(let payload):
@@ -44,7 +46,7 @@
                          consolePackets += 1
                          guard consolePackets <= 64, text.utf8.count % 2 == 1 else { throw Reason.protocolFailure }
                          _ = try DebugProtocolWire.unhex(String(text.dropFirst()),count:(text.utf8.count-1)/2)
-@@ -118,7 +124,7 @@
+@@ -118,7 +124,7 @@ final class DebugArenaSession {
                      }
                      guard acknowledged else { throw Reason.protocolFailure }
                      answerable -= 1; outstanding -= 1
@@ -53,7 +55,7 @@
                      catch {
                          let reason = error as? Reason ?? .protocolFailure
                          if attached, phase != .detach, phase != .cleanup {
-@@ -133,9 +139,17 @@
+@@ -133,9 +139,17 @@ final class DebugArenaSession {
              return events
          } catch { return finish(.protocolFailure,detached:false) }
      }
@@ -73,7 +75,7 @@
          switch phase {
          case .supported:
              var seen = false
-@@ -172,6 +186,12 @@
+@@ -172,6 +186,12 @@ final class DebugArenaSession {
              let final = phase == .finalChallenge
              guard try DebugProtocolWire.unhex(text,count:32) == request.challenge else { throw Reason.wrongChallenge }
              if final { return try command("D",phase:.detach,now:now) }
@@ -86,7 +88,7 @@
              index = 0; regionCursor = request.regions[0].address
              return try command("qMemoryRegionInfo:"+String(regionCursor,radix:16),phase:.region,now:now)
          case .region:
-@@ -189,20 +209,7 @@
+@@ -189,20 +209,7 @@ final class DebugArenaSession {
              case .ok: guard text == "OK" else { throw Reason.serverFailure }
              case .zeros(let count): guard try DebugProtocolWire.allZeros(text, count: count) else { throw Reason.nonzeroMemory }
              }
@@ -108,7 +110,7 @@
          case .detach, .cleanup:
              guard text == "OK" else { throw Reason.serverFailure }
              attached = false
-@@ -212,13 +219,30 @@
+@@ -212,13 +219,30 @@ final class DebugArenaSession {
          default:throw Reason.protocolFailure
          }
      }
@@ -140,9 +142,11 @@
              replies.append(.zeros(count)); offset += UInt64(count)
          }
          return try send(texts,phase:.preflight,now:now)
+diff --git a/tests/test_debug_arena_peer.py b/tests/test_debug_arena_peer.py
+index d0c3f05..b3b371a 100644
 --- a/tests/test_debug_arena_peer.py
 +++ b/tests/test_debug_arena_peer.py
-@@ -16,7 +16,7 @@
+@@ -16,7 +16,7 @@ REGIONS = {0x200000:130*PAGE,0x1000000:PAGE}
  LAST = 0x1000000
  
  def frame(text,checksum=True):
@@ -151,7 +155,7 @@
      encoded = b''.join(bytes([125,v^32]) if v in b'$#}*' else bytes([v]) for v in b)
      return b'$'+encoded+b'#'+(f'{sum(encoded)%256:02x}' if checksum else '00').encode()
  
-@@ -68,6 +68,9 @@
+@@ -69,6 +69,9 @@ def exchange(mode='success',packet_size='1000',fragment=False,time_step=.001):
      state={'noack':False,'process_queries':0,'challenge_reads':0,'detach':False}
      def region(address): return next(base for base,size in REGIONS.items() if base<=address<base+size)
      def respond(text):
@@ -161,7 +165,7 @@
          if text == 'qSupported': return 'PacketSize='+packet_size+';qXfer:features:read+'
          if text == 'QStartNoAckMode': return '' if mode == 'unsupported_no_ack' else 'OK'
          if text == 'QSetDetachOnError:1': return '' if mode == 'unsupported_detach_policy' else 'OK'
-@@ -86,22 +89,33 @@
+@@ -87,22 +90,33 @@ def exchange(mode='success',packet_size='1000',fragment=False,time_step=.001):
              permission = 'rwx' if mode=='unsafe_last' and address==LAST else 'rx'
              response = f'start:{address:x};size:{REGIONS[address]:x};permissions:{permission};'
              return response+'name:2f6170702f62696e617279;' if mode=='file_backed' else response
@@ -198,7 +202,7 @@
              response = '00'*count
              if mode=='nonzero_last' and base==LAST: response='01'+response[2:]
              if mode=='malformed_zero' and base==LAST: response='01'+response[2:-1]+'z'
-@@ -123,7 +137,7 @@
+@@ -125,7 +139,7 @@ def exchange(mode='success',packet_size='1000',fragment=False,time_step=.001):
          while commands:
              # Acknowledged commands go one at a time; detaching goes alone.
              assert len(commands)==1 or (state['noack'] and 'D' not in commands),(mode,commands)
@@ -207,7 +211,7 @@
              acked=not state['noack']
              responses=[respond(text) for text in commands]
              if commands==['QStartNoAckMode'] and responses==['OK']: state['noack']=True
-@@ -144,8 +158,9 @@
+@@ -146,8 +160,9 @@ def exchange(mode='success',packet_size='1000',fragment=False,time_step=.001):
              terminal+=finished
          assert len(terminal)==1,(mode,terminal)
          result=terminal[0]
@@ -218,7 +222,7 @@
              assert result['readbackCalls'] > 0 and 'handling=' in result['readbackSummary']
              pages=[base+n*PAGE for base,size in REGIONS.items() for n in range(size//PAGE)]
              assert state['detach'] and writes==pages and readback==pages
-@@ -160,6 +175,10 @@
+@@ -162,6 +177,10 @@ def exchange(mode='success',packet_size='1000',fragment=False,time_step=.001):
              assert 'failure' in result and not result.get('success')
              if mode in ('wrong_pid','wrong_uid','wrong_arch','duplicate_pid','wrong_challenge','unsafe_last','file_backed','nonzero_last','short_read','malformed_zero','long_read'):
                  assert not writes and state['detach'] and result['detached'] is True
@@ -229,7 +233,7 @@
              if mode in ('short_read','malformed_zero','long_read'):
                  assert result['failure']=='protocolFailure'
              if mode=='nonzero_last':
-@@ -179,6 +198,9 @@
+@@ -183,6 +202,9 @@ def main():
                   'nonzero_last','short_read','malformed_zero','long_read','write_error','verify_corrupt','final_pid','final_challenge','detach_error','detach_trailing',
                   'attach_error','unsupported_no_ack','unsupported_detach_policy','ack_without_ack_mode']:
          exchange(mode,fragment=mode=='success')
@@ -237,5 +241,5 @@
 +        exchange(mode,fragment=True)
 +    exchange('binary',packet_size='8000')
      exchange(packet_size='8000'); exchange(packet_size='100')
-     assert exchange('no_ack_checksums').get('success') is True
-     for mode in ('checksum','nack','deadline','disconnect','cancel','coalesced','response_without_ack'):
+     # Simulated time: sustained valid work beyond the former deadline succeeds,
+     # but the new absolute bound still terminates progress. No wall-clock wait.

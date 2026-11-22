@@ -20,8 +20,16 @@ The choice changes the interface only. An earlier choice is kept: a phone that w
 ## Hold the phone either way
 
 The launcher works upright or sideways; on an iPhone Duo's cover screen it is designed to be
-used upright. The game itself always plays sideways: when you tap **Play**, the screen turns to
+used upright. The game itself plays sideways: when you tap **Play**, the screen turns to
 landscape first and the game starts once it has turned.
+
+An unfolded iPhone Duo can also be held upright, flat or half-closed like a handheld console.
+The game then plays on the top screen, and the on-screen controller, the toolbar, the
+performance overlay and the chat composer move to the bottom screen. Turn the phone between
+sideways and upright at any time; the picture keeps its size and sharpness. Controls you move
+while upright keep their own positions, so the sideways layout is not changed; a control you
+never moved upright sits where the sideways layout has it. Folding the phone returns the game to
+sideways.
 
 Typing a game password on a phone keyboard every launch is slow. With **Battle.net Login (Experimental)** turned on, the keyboard's row carries a yellow key while the game's password field has the keyboard: it types a password you chose to save on this device, behind Face ID or your passcode, and holding it forgets that password. It belongs to that experimental feature and is described in [Use WolkaraForever](USING_WOLKARAFOREVER.md#experimental-battlenet-login).
 

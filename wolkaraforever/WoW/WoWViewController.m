@@ -32,6 +32,7 @@
 // The game's download languages, named in the app's own language: a German-speaking user
 // choosing what World of Warcraft downloads needs to read the choice, and the row above it
 // is the same row in the same language.
+BOOL WKSceneHasTwoScreens(CGSize scene) { return scene.height>scene.width && scene.width>=600; }
 static NSString *TKWoWLocaleName(NSString *locale) {
     static NSArray<NSString *> *known; static dispatch_once_t once;
     dispatch_once(&once, ^{ known = @[@"enUS", @"frFR", @"esES", @"deDE"]; });
@@ -872,10 +873,16 @@ static NSNotificationName const TKForeverLayoutDidChange = @"AKGamepadLayoutDidC
 }
 // The game sizes its surface from the scene the moment its first window opens (patch 0046), so
 // on an upright phone the scene is turned sideways first and the game is started once it has
-// turned - never while it is turning. Anywhere already sideways, or on a tablet, it starts now.
+// turned - never while it is turning. Anywhere already sideways, on an unfolded phone held upright
+// (the game takes the top screen), or on a tablet, it starts now.
 - (void)startAppInLandscape:(TKApp *)app {
     UIWindowScene *scene=self.view.window.windowScene;
     BOOL phone=UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPhone;
+    if (phone && scene && WKSceneHasTwoScreens(scene.coordinateSpace.bounds.size)) {
+        WKLog("ui", @"play: unfolded and upright; the game takes the top screen");
+        if (self.startApp) self.startApp(app);
+        return;
+    }
     if (phone) [self holdLandscape:YES];
     // Sideways is not enough: an unfolded phone held sideways can show the launcher in one tall panel.
     if (!phone || !scene || (UIInterfaceOrientationIsLandscape(scene.effectiveGeometry.interfaceOrientation) &&

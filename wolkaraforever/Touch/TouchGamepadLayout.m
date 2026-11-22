@@ -13,6 +13,8 @@ static NSString *const LayoutKey = @"WolkaraForeverTouchLayoutV1";
 // Simple's own control positions, so Full and Simple are independent: dragging a shoulder in
 // one never moves it in the other. Full keeps the key every release through v1.0.10 wrote.
 static NSString *const SimplePositionsKey = @"simplePositions";
+static NSString *const TwoScreenPositionsKey = @"twoScreenPositions";
+static NSString *const TwoScreenSimplePositionsKey = @"twoScreenSimplePositions";
 NSNotificationName const AKGamepadLayoutDidChangeNotification = @"AKGamepadLayoutDidChange";
 static CGFloat Clamp(CGFloat value, CGFloat minimum, CGFloat maximum, CGFloat fallback) {
     return isfinite(value) ? MAX(minimum,MIN(maximum,value)) : fallback;
@@ -50,6 +52,7 @@ NSString *AKGamepadStickButtonElement(NSString *element) {
     NSUserDefaults *_defaults;
     // Full's positions and Simple's, so each arrangement keeps where its own controls were put.
     NSMutableDictionary *_positionsFull, *_positionsSimple;
+    NSMutableDictionary *_twoScreenFull, *_twoScreenSimple;
     NSArray<NSDictionary<NSString *, id> *> *_abilityZones;
 }
 - (instancetype)initWithDefaults:(NSUserDefaults *)defaults {
@@ -109,6 +112,8 @@ NSString *AKGamepadStickButtonElement(NSString *element) {
         _elements = mapping;
         _positionsFull = [self positionsFrom:values[@"positions"]];
         _positionsSimple = [self positionsFrom:values[SimplePositionsKey]];
+        _twoScreenFull = [self positionsFrom:values[TwoScreenPositionsKey]];
+        _twoScreenSimple = [self positionsFrom:values[TwoScreenSimplePositionsKey]];
         // The arrangement: Full for anything that predates the key, and the whole point of
         // the migration - no installation changes what it draws because of an update.
         id mode = values[@"mode"];
@@ -156,7 +161,11 @@ NSString *AKGamepadStickButtonElement(NSString *element) {
     }
     return positions;
 }
-- (NSMutableDictionary *)positions { return _mode == AKGamepadLayoutModeSimple ? _positionsSimple : _positionsFull; }
+- (NSMutableDictionary *)sidewaysPositions { return _mode == AKGamepadLayoutModeSimple ? _positionsSimple : _positionsFull; }
+- (NSMutableDictionary *)positions {
+    if (!_twoScreens) return [self sidewaysPositions];
+    return _mode == AKGamepadLayoutModeSimple ? _twoScreenSimple : _twoScreenFull;
+}
 // Down to 5%: sticks that are barely there still work, and some players want exactly that.
 - (void)setOpacity:(CGFloat)value { _opacity = Clamp(value,0.05,1,0.8); }
 - (void)setRearScale:(CGFloat)value { _rearScale = Clamp(value,0.8,1.5,1); }
@@ -165,7 +174,7 @@ NSString *AKGamepadStickButtonElement(NSString *element) {
     CGFloat width = MAX(0,MIN(frame.size.width,bounds.size.width));
     CGFloat height = MAX(0,MIN(frame.size.height,bounds.size.height));
     CGFloat dx = MAX(0,bounds.size.width-width), dy = MAX(0,bounds.size.height-height);
-    NSArray *point = [self positions][item];
+    NSArray *point = [self positions][item] ?: (_twoScreens ? [self sidewaysPositions][item] : nil);
     CGFloat x = point ? [point[0] doubleValue]*dx : frame.origin.x-bounds.origin.x;
     CGFloat y = point ? [point[1] doubleValue]*dy : frame.origin.y-bounds.origin.y;
     return CGRectMake(bounds.origin.x+Clamp(x,0,dx,0),bounds.origin.y+Clamp(y,0,dy,0),width,height);
@@ -190,7 +199,8 @@ NSString *AKGamepadStickButtonElement(NSString *element) {
         @"frontScale":@(_frontScale),@"hapticsEnabled":@(_hapticsEnabled),@"swapShoulders":@(_swapShoulders),
         @"performanceOverlayEnabled":@(_performanceOverlayEnabled),@"sticksOnly":@(_sticksOnly),
         @"floatingSticks":@(_floatingSticks),@"keepFree":_keepFree,@"elements":_elements,
-        @"positions":[_positionsFull copy], SimplePositionsKey:[_positionsSimple copy]} forKey:LayoutKey];
+        @"positions":[_positionsFull copy], SimplePositionsKey:[_positionsSimple copy],
+        TwoScreenPositionsKey:[_twoScreenFull copy], TwoScreenSimplePositionsKey:[_twoScreenSimple copy]} forKey:LayoutKey];
     [NSNotificationCenter.defaultCenter postNotificationName:AKGamepadLayoutDidChangeNotification object:_defaults];
 }
 - (void)reset {
@@ -207,7 +217,8 @@ NSString *AKGamepadStickButtonElement(NSString *element) {
     _stickButtonsEnabled = NO;
     _stickyTriggers = NO;
     _abilityZones = @[];
-    [_positionsFull removeAllObjects]; [_positionsSimple removeAllObjects]; [self save];
+    [_positionsFull removeAllObjects]; [_positionsSimple removeAllObjects];
+    [_twoScreenFull removeAllObjects]; [_twoScreenSimple removeAllObjects]; [self save];
 }
 // A stored or proposed area, or nil when it is not four finite fractions of the screen. Kept
 // inside the screen rather than rejected for a rounding error, and never smaller than 1%.
@@ -391,7 +402,8 @@ static const NSUInteger AKGamepadMaximumZones = 6;
              @"performanceOverlayEnabled":@(_performanceOverlayEnabled),
              @"sticksOnly":@(_sticksOnly), @"floatingSticks":@(_floatingSticks),
              @"keepFree":_keepFree, @"elements":_elements,
-             @"positions":[_positionsFull copy], SimplePositionsKey:[_positionsSimple copy]};
+             @"positions":[_positionsFull copy], SimplePositionsKey:[_positionsSimple copy],
+             TwoScreenPositionsKey:[_twoScreenFull copy], TwoScreenSimplePositionsKey:[_twoScreenSimple copy]};
 }
 - (void)applyArrangement:(NSDictionary<NSString *, id> *)arrangement {
     if (![arrangement isKindOfClass:NSDictionary.class]) return;
@@ -429,10 +441,16 @@ static const NSUInteger AKGamepadMaximumZones = 6;
     _elements = mappedElements;
     // Each arrangement's positions are replaced only when the arrangement carries them, so a
     // template that changes the mode never empties the other one's saved places.
-    if ([values[@"positions"] isKindOfClass:NSDictionary.class])
+    // An arrangement without lower-screen positions - a template, or a profile saved before they
+    // existed - leaves that screen following the sideways places it brings.
+    if ([values[@"positions"] isKindOfClass:NSDictionary.class]) {
         _positionsFull = [self positionsFrom:values[@"positions"]];
-    if ([values[SimplePositionsKey] isKindOfClass:NSDictionary.class])
+        _twoScreenFull = [self positionsFrom:values[TwoScreenPositionsKey]];
+    }
+    if ([values[SimplePositionsKey] isKindOfClass:NSDictionary.class]) {
         _positionsSimple = [self positionsFrom:values[SimplePositionsKey]];
+        _twoScreenSimple = [self positionsFrom:values[TwoScreenSimplePositionsKey]];
+    }
 }
 // The built-in starting points, from the one place they are defined.
 + (NSArray<NSString *> *)templateNames { return AKLayoutTemplateNames(); }

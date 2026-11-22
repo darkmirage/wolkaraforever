@@ -191,6 +191,8 @@ wolkaraforever/Touch/TouchGamepadLayout.h translation/AppKit/TouchGamepadLayout.
 wolkaraforever/Touch/TouchGamepadLayout.m translation/AppKit/TouchGamepadLayout.m add
 wolkaraforever/Touch/TouchHaptics.h translation/AppKit/TouchHaptics.h add
 wolkaraforever/Touch/TouchHaptics.m translation/AppKit/TouchHaptics.m add
+wolkaraforever/Touch/TwoScreenLayout.h translation/AppKit/TwoScreenLayout.h add
+wolkaraforever/Touch/TwoScreenLayout.m translation/AppKit/TwoScreenLayout.m add
 wolkaraforever/Touch/tests/test_touch_controls_app.m tests/test_touch_controls_app.m replace
 wolkaraforever/Touch/tests/test_touch_gamepad_app.m tests/test_touch_gamepad_app.m add
 #
